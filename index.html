@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Excalidraw → draw.io Converter (Web)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Excalidraw → draw.io Converter</h1>
+      <p class="sub">Client-side conversion of Excalidraw JSON to draw.io (mxGraph) XML. No uploads.</p>
+    </header>
+
+    <main>
+      <section class="input">
+        <div class="picker">
+          <label class="file-label">
+            <input id="fileInput" type="file" accept=".excalidraw,.json,.svg,application/json,image/svg+xml" />
+            <span>Select .excalidraw / .svg file</span>
+          </label>
+          <button id="sampleBtn" type="button" class="linkish">Load sample</button>
+        </div>
+
+        <textarea id="inputText" placeholder="Or paste Excalidraw JSON here..." wrap="off" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+      </section>
+
+      <section class="output">
+        <div class="actions">
+          <button id="downloadBtn" type="button" disabled>Download .drawio</button>
+        </div>
+
+        <div class="split">
+          <div>
+            <h3>draw.io XML</h3>
+            <textarea id="outputText" readonly placeholder="Converted draw.io XML will appear here..." wrap="off" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+          </div>
+          <div>
+            <h3>Info</h3>
+            <pre id="info"></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Built for local use. Heuristic conversion of Excalidraw primitives to draw.io (mxGraph) XML.</p>
+      <p>(Inspired by gliffy converter)</p>
+      <p>Made with GPT-5 🤯</p>
+    </footer>
+
+    <script src="converter-drawio.js"></script>
+    <script src="main.js"></script>
+  </body>
+</html>
