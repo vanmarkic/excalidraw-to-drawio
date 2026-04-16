@@ -283,15 +283,9 @@ if (ppObj) {
     assert(rectShape.transformInverse, 'penpot: rect has transformInverse (camelCase)');
     assert(rectShape.parentId, 'penpot: rect has parentId (camelCase)');
     assert(rectShape.frameId, 'penpot: rect has frameId (camelCase)');
-    // Bound text is a child shape, not embedded
-    assert(Array.isArray(rectShape.shapes) && rectShape.shapes.length > 0, 'penpot: rect has child text shape');
-    const childTextId = rectShape.shapes[0];
-    const childText = shapes[childTextId];
-    assert(childText && childText.type === 'text', 'penpot: child text is text type');
-    if (childText) {
-      assert(childText.content && childText.content.type === 'root', 'penpot: text has rich content structure');
-      assert(childText.growType === 'auto-height', 'penpot: text has growType (camelCase)');
-    }
+    // Bound text is stored directly on the shape (not as child — avoids Penpot stack overflow)
+    assert(rectShape.content && rectShape.content.type === 'root', 'penpot: rect has text content directly');
+    assert(rectShape.growType === 'fixed', 'penpot: rect with text has growType fixed');
   }
 
   // Ellipse shape (Penpot calls it "circle")
@@ -313,11 +307,11 @@ if (ppObj) {
   const arrowWithCap = arrowPaths.find(p => p.strokes && p.strokes[0] && p.strokes[0].strokeCapEnd);
   assert(!!arrowWithCap, 'penpot: arrow has strokeCapEnd');
 
-  // Edge label as child text shape
-  const arrowWithChild = arrowPaths.find(p => Array.isArray(p.shapes) && p.shapes.length > 0);
-  if (arrowWithChild) {
-    const labelText = shapes[arrowWithChild.shapes[0]];
-    assert(labelText && labelText.type === 'text', 'penpot: arrow label is text shape');
+  // Edge label as sibling text shape (not child of arrow)
+  const labelTexts = shapeList.filter(s => s.type === 'text' && s.name && s.name.startsWith('label_'));
+  assert(labelTexts.length > 0, 'penpot: edge label exists as sibling text');
+  if (labelTexts.length > 0) {
+    assert(labelTexts[0].parentId === userFrame.id, 'penpot: edge label parent is frame, not arrow');
   }
 
   // Standalone text
