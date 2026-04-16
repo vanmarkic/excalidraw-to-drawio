@@ -58,7 +58,6 @@ vm.createContext(sandbox);
 const converterFiles = [
   'converter-drawio.js',
   'converter-mermaid.js',
-  'converter-klaxoon.js',
   'converter-penpot.js',
 ];
 
@@ -72,7 +71,7 @@ for (const file of converterFiles) {
   }
 }
 
-const { ExcDrawio, ExcMermaid, ExcKlaxoon, ExcPenpot } = sandbox.window;
+const { ExcDrawio, ExcMermaid, ExcPenpot } = sandbox.window;
 
 // ── Load fixture ─────────────────────────────────────────────────────────────
 
@@ -156,86 +155,6 @@ assertNotIncludes(mermaidOut, 'rect_deleted', 'mermaid: deleted element excluded
 // Accepts object input
 const mermaidOut2 = ExcMermaid.convertExcalidrawToMermaid(fixtureObj);
 assert(typeof mermaidOut2 === 'string' && mermaidOut2.includes('flowchart'), 'mermaid: accepts object input');
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// KLAXOON TESTS
-// ═══════════════════════════════════════════════════════════════════════════════
-section('Klaxoon converter');
-
-const klaxoonOut = ExcKlaxoon.convertExcalidrawToKlaxoon(fixture);
-
-// Valid JSON
-let klaxObj;
-try {
-  klaxObj = JSON.parse(klaxoonOut);
-  assert(true, 'klaxoon: output is valid JSON');
-} catch (e) {
-  assert(false, 'klaxoon: output is valid JSON - ' + e.message);
-}
-
-if (klaxObj) {
-  // Top-level structure
-  assert(klaxObj.type === 'klaxoon-board', 'klaxoon: type is klaxoon-board');
-  assert(klaxObj.metadata && klaxObj.metadata.source === 'excalidraw-converter', 'klaxoon: metadata.source set');
-  assert(Array.isArray(klaxObj.items), 'klaxoon: has items array');
-  assert(Array.isArray(klaxObj.connectors), 'klaxoon: has connectors array');
-
-  // Items count: rect1, ell1, dia1, fd1 (shapes) + txt_standalone (standalone text) = 5
-  // deleted element and container texts should not be separate items
-  const cards = klaxObj.items.filter(i => i.type === 'card');
-  assert(cards.length === 3, `klaxoon: 3 card items (got ${cards.length})`);
-
-  // Shape types
-  const rectCard = klaxObj.items.find(i => i.shape === 'rectangle' && i.content === 'Start');
-  assert(!!rectCard, 'klaxoon: rectangle card with content "Start"');
-  const ellCard = klaxObj.items.find(i => i.shape === 'ellipse' && i.content === 'End');
-  assert(!!ellCard, 'klaxoon: ellipse card with content "End"');
-  const diaCard = klaxObj.items.find(i => i.shape === 'diamond' && i.content === 'Check?');
-  assert(!!diaCard, 'klaxoon: diamond card with content "Check?"');
-
-  // Positions preserved
-  if (rectCard) {
-    assert(rectCard.position.x === 100, 'klaxoon: rect x=100');
-    assert(rectCard.position.y === 50, 'klaxoon: rect y=50');
-    assert(rectCard.size.width === 200, 'klaxoon: rect width=200');
-  }
-
-  // Styling
-  if (rectCard) {
-    assert(rectCard.style.backgroundColor === '#a5d8ff', 'klaxoon: rect backgroundColor');
-    assert(rectCard.style.borderColor === '#1e1e1e', 'klaxoon: rect borderColor');
-    assert(rectCard.style.borderWidth === 2, 'klaxoon: rect borderWidth');
-  }
-
-  // Standalone text
-  const standaloneText = klaxObj.items.find(i => i.type === 'text' && i.content === 'A standalone note');
-  assert(!!standaloneText, 'klaxoon: standalone text item present');
-
-  // Connectors
-  assert(klaxObj.connectors.length >= 2, `klaxoon: at least 2 connectors (got ${klaxObj.connectors.length})`);
-
-  // Arrow with label
-  const labeledConn = klaxObj.connectors.find(c => c.label === 'Yes');
-  assert(!!labeledConn, 'klaxoon: connector with label "Yes"');
-  if (labeledConn) {
-    assert(labeledConn.style.strokeStyle === 'dashed', 'klaxoon: dashed connector');
-    assert(labeledConn.style.endArrow === 'arrow', 'klaxoon: end arrow type');
-  }
-
-  // Connectors have source/target bindings
-  const boundConn = klaxObj.connectors.find(c => c.sourceId && c.targetId);
-  assert(!!boundConn, 'klaxoon: at least one connector has sourceId + targetId');
-
-  // Deleted elements excluded
-  const deletedItem = klaxObj.items.find(i => i.position && i.position.x === 999);
-  assert(!deletedItem, 'klaxoon: deleted element excluded');
-}
-
-// Accepts object input
-const klaxoonOut2 = ExcKlaxoon.convertExcalidrawToKlaxoon(fixtureObj);
-let klaxObj2;
-try { klaxObj2 = JSON.parse(klaxoonOut2); } catch {}
-assert(klaxObj2 && klaxObj2.type === 'klaxoon-board', 'klaxoon: accepts object input');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PENPOT TESTS
@@ -351,7 +270,6 @@ section('Edge cases');
 const emptyInput = JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {} });
 assert(typeof ExcDrawio.convertExcalidrawToDrawio(emptyInput) === 'string', 'edge: drawio handles empty elements');
 assert(typeof ExcMermaid.convertExcalidrawToMermaid(emptyInput) === 'string', 'edge: mermaid handles empty elements');
-assert(typeof ExcKlaxoon.convertExcalidrawToKlaxoon(emptyInput) === 'string', 'edge: klaxoon handles empty elements');
 assert(typeof ExcPenpot.convertExcalidrawToPenpot(emptyInput) === 'string', 'edge: penpot handles empty elements');
 
 // Missing optional fields
@@ -362,7 +280,6 @@ const minimalRect = JSON.stringify({
 });
 assert(typeof ExcDrawio.convertExcalidrawToDrawio(minimalRect) === 'string', 'edge: drawio handles minimal element');
 assert(typeof ExcMermaid.convertExcalidrawToMermaid(minimalRect) === 'string', 'edge: mermaid handles minimal element');
-assert(typeof ExcKlaxoon.convertExcalidrawToKlaxoon(minimalRect) === 'string', 'edge: klaxoon handles minimal element');
 assert(typeof ExcPenpot.convertExcalidrawToPenpot(minimalRect) === 'string', 'edge: penpot handles minimal element');
 
 // Negative coordinates
@@ -378,7 +295,6 @@ const negDrawio = ExcDrawio.convertExcalidrawToDrawio(negCoords);
 // Drawio converter shifts coordinates to positive quadrant
 assertNotIncludes(negDrawio, 'x="-', 'edge: drawio no negative x in geometry');
 assert(typeof ExcMermaid.convertExcalidrawToMermaid(negCoords) === 'string', 'edge: mermaid handles negative coords');
-assert(typeof ExcKlaxoon.convertExcalidrawToKlaxoon(negCoords) === 'string', 'edge: klaxoon handles negative coords');
 assert(typeof ExcPenpot.convertExcalidrawToPenpot(negCoords) === 'string', 'edge: penpot handles negative coords');
 
 // Special characters in text

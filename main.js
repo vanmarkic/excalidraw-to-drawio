@@ -14,7 +14,6 @@
   const formatMeta = {
     drawio:  { label: 'draw.io XML',    ext: '.drawio',  mime: 'application/xml' },
     mermaid: { label: 'Mermaid',         ext: '.mmd',     mime: 'text/plain' },
-    klaxoon: { label: 'Klaxoon JSON',    ext: '.json',    mime: 'application/json' },
     penpot:  { label: 'Penpot JSON',     ext: '.json',    mime: 'application/json' }
   };
 
@@ -32,9 +31,6 @@
       switch(fmt){
         case 'mermaid':
           out = window.ExcMermaid.convertExcalidrawToMermaid(data);
-          break;
-        case 'klaxoon':
-          out = window.ExcKlaxoon.convertExcalidrawToKlaxoon(data);
           break;
         case 'penpot':
           out = window.ExcPenpot.convertExcalidrawToPenpot(data);
