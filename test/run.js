@@ -344,6 +344,303 @@ try { ppObj2 = JSON.parse(penpotOut2); } catch {}
 assert(ppObj2 && ppObj2.manifest && ppObj2.manifest.type === 'penpot/export-files', 'penpot: accepts object input');
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// PENPOT REGRESSION: NO CHILD TEXT SHAPES (stack overflow prevention)
+// ═══════════════════════════════════════════════════════════════════════════════
+section('Penpot regression (no child text)');
+
+if (ppObj) {
+  const shapes = ppObj.shapes;
+  const shapeList = Object.values(shapes);
+
+  // CRITICAL: No non-frame shape should have a shapes array with text children
+  // This caused "Maximum call stack size exceeded" in Penpot
+  const shapesWithTextChildren = shapeList.filter(s => {
+    if (s.type === 'frame') return false; // Frames legitimately contain text shapes
+    if (!Array.isArray(s.shapes) || s.shapes.length === 0) return false;
+    return s.shapes.some(childId => {
+      const child = shapes[childId];
+      return child && child.type === 'text';
+    });
+  });
+  assert(shapesWithTextChildren.length === 0,
+    `penpot-regression: no non-frame shape has text children in shapes array (found ${shapesWithTextChildren.length})`);
+
+  // Every shape's parentId should reference an existing shape
+  for (const s of shapeList) {
+    if (s.parentId) {
+      assert(!!shapes[s.parentId],
+        `penpot-regression: shape "${s.name}" parentId ${s.parentId} exists in shapes map`);
+    }
+  }
+
+  // Every shape's frameId should reference an existing frame
+  for (const s of shapeList) {
+    if (s.frameId) {
+      const frame = shapes[s.frameId];
+      assert(frame && frame.type === 'frame',
+        `penpot-regression: shape "${s.name}" frameId references a frame`);
+    }
+  }
+
+  // Root frame must be self-referencing (parentId = frameId = own id)
+  const root = shapes['00000000-0000-0000-0000-000000000000'];
+  assert(root.parentId === root.id, 'penpot-regression: root parentId = own id');
+  assert(root.frameId === root.id, 'penpot-regression: root frameId = own id');
+
+  // No shape (except frames) should have a shapes array
+  const nonFramesWithShapes = shapeList.filter(s =>
+    s.type !== 'frame' && Array.isArray(s.shapes) && s.shapes.length > 0);
+  assert(nonFramesWithShapes.length === 0,
+    `penpot-regression: no non-frame shape has children (found ${nonFramesWithShapes.length})`);
+
+  // Rect shapes with text should have content.type === 'root' AND growType === 'fixed'
+  const rectsWithContent = shapeList.filter(s => s.type === 'rect' && s.content && s.content.type === 'root');
+  for (const r of rectsWithContent) {
+    assert(r.growType === 'fixed',
+      `penpot-regression: rect "${r.name}" with text content has growType=fixed`);
+  }
+
+  // Diamond path content must be an array (not text object)
+  const diamonds = shapeList.filter(s => s.name && s.name.startsWith('diamond_'));
+  for (const d of diamonds) {
+    assert(Array.isArray(d.content),
+      `penpot-regression: diamond "${d.name}" content is array (path data), not text`);
+  }
+
+  // Label shapes for diamond/arrow text are at frame level
+  const labels = shapeList.filter(s => s.name && s.name.startsWith('label_'));
+  const userFrame = shapeList.find(s => s.type === 'frame' && s.name === 'Frame 1');
+  for (const l of labels) {
+    assert(l.parentId === userFrame.id,
+      `penpot-regression: label "${l.name}" parentId is user frame`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PENPOT TEXT CONTENT STRUCTURE
+// ═══════════════════════════════════════════════════════════════════════════════
+section('Penpot text content');
+
+if (ppObj) {
+  const shapes = ppObj.shapes;
+  const shapeList = Object.values(shapes);
+
+  // All text content should follow root > paragraph-set > paragraph > children structure
+  const shapesWithTextContent = shapeList.filter(s => s.content && s.content.type === 'root');
+  assert(shapesWithTextContent.length > 0, 'penpot-text: found shapes with text content');
+  for (const s of shapesWithTextContent) {
+    const root = s.content;
+    assert(root.children && root.children.length > 0, `penpot-text: "${s.name}" root has children`);
+    const pset = root.children[0];
+    assert(pset.type === 'paragraph-set', `penpot-text: "${s.name}" first child is paragraph-set`);
+    assert(pset.children && pset.children.length > 0, `penpot-text: "${s.name}" paragraph-set has paragraphs`);
+    for (const para of pset.children) {
+      assert(para.type === 'paragraph', `penpot-text: "${s.name}" has paragraph type`);
+      assert(Array.isArray(para.children) && para.children.length > 0,
+        `penpot-text: "${s.name}" paragraph has text children`);
+      const leaf = para.children[0];
+      assert(typeof leaf.text === 'string', `penpot-text: "${s.name}" leaf has text string`);
+      assert(typeof leaf.fontSize === 'string', `penpot-text: "${s.name}" fontSize is string`);
+      assert(typeof leaf.fontFamily === 'string', `penpot-text: "${s.name}" fontFamily is string`);
+    }
+  }
+
+  // Multi-line text: test with dedicated input
+  const multiLineInput = JSON.stringify({
+    type: 'excalidraw', version: 2,
+    elements: [
+      { type: 'rectangle', id: 'ml_r', x: 0, y: 0, width: 200, height: 100, strokeColor: '#000' },
+      { type: 'text', id: 'ml_t', x: 10, y: 10, width: 180, height: 80,
+        text: 'Line one\nLine two\nLine three', fontSize: 16, strokeColor: '#000', containerId: 'ml_r' }
+    ], files: {}
+  });
+  const mlPenpot = JSON.parse(ExcPenpot.convertExcalidrawToPenpot(multiLineInput));
+  const mlShapes = Object.values(mlPenpot.shapes);
+  const mlRect = mlShapes.find(s => s.type === 'rect');
+  assert(mlRect && mlRect.content && mlRect.content.type === 'root', 'penpot-text: multi-line rect has content');
+  if (mlRect && mlRect.content) {
+    const paraCount = mlRect.content.children[0].children.length;
+    assert(paraCount === 3, `penpot-text: multi-line text produces 3 paragraphs (got ${paraCount})`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PENPOT TRANSFORM & GEOMETRY
+// ═══════════════════════════════════════════════════════════════════════════════
+section('Penpot geometry');
+
+if (ppObj) {
+  const shapes = ppObj.shapes;
+  const shapeList = Object.values(shapes);
+
+  // All non-root shapes should have selrect
+  const shapesWithSelrect = shapeList.filter(s =>
+    s.id !== '00000000-0000-0000-0000-000000000000' &&
+    s.type !== 'text' && s.selrect);
+  for (const s of shapesWithSelrect) {
+    assert(typeof s.selrect.x === 'number', `penpot-geom: "${s.name}" selrect.x is number`);
+    assert(typeof s.selrect.width === 'number', `penpot-geom: "${s.name}" selrect.width is number`);
+    assert(s.selrect.x2 === s.selrect.x + s.selrect.width,
+      `penpot-geom: "${s.name}" selrect x2 = x + width`);
+    assert(s.selrect.y2 === s.selrect.y + s.selrect.height,
+      `penpot-geom: "${s.name}" selrect y2 = y + height`);
+  }
+
+  // All non-root shapes should have 4 corner points
+  const shapesWithPoints = shapeList.filter(s =>
+    s.id !== '00000000-0000-0000-0000-000000000000' &&
+    s.type !== 'text' && Array.isArray(s.points));
+  for (const s of shapesWithPoints) {
+    assert(s.points.length === 4, `penpot-geom: "${s.name}" has 4 points`);
+  }
+
+  // Transform should have all 6 matrix fields
+  const shapesWithTransform = shapeList.filter(s => s.transform);
+  for (const s of shapesWithTransform) {
+    const t = s.transform;
+    assert('a' in t && 'b' in t && 'c' in t && 'd' in t && 'e' in t && 'f' in t,
+      `penpot-geom: "${s.name}" transform has all 6 fields`);
+  }
+  const shapesWithInverse = shapeList.filter(s => s.transformInverse);
+  for (const s of shapesWithInverse) {
+    const t = s.transformInverse;
+    assert('a' in t && 'b' in t && 'c' in t && 'd' in t && 'e' in t && 'f' in t,
+      `penpot-geom: "${s.name}" transformInverse has all 6 fields`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPECIFIC FIXTURE SCENARIOS
+// ═══════════════════════════════════════════════════════════════════════════════
+section('Fixture scenarios');
+
+// Rotated element
+const rotatedInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'rectangle', id: 'rot1', x: 100, y: 100, width: 80, height: 40,
+      strokeColor: '#000', backgroundColor: '#fff', angle: Math.PI / 4 }
+  ], files: {}
+});
+const rotDrawio = ExcDrawio.convertExcalidrawToDrawio(rotatedInput);
+assertIncludes(rotDrawio, 'rotation=', 'fixture: drawio includes rotation');
+
+const rotPenpot = JSON.parse(ExcPenpot.convertExcalidrawToPenpot(rotatedInput));
+const rotShape = Object.values(rotPenpot.shapes).find(s => s.name && s.name.startsWith('rectangle_'));
+if (rotShape) {
+  assert(rotShape.rotation !== 0, 'fixture: penpot rotation is non-zero');
+  assert(rotShape.transform.a !== 1 || rotShape.transform.b !== 0,
+    'fixture: penpot transform is not identity for rotated shape');
+}
+
+// Opacity
+const opacityInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'rectangle', id: 'op1', x: 0, y: 0, width: 100, height: 50,
+      strokeColor: '#000', backgroundColor: '#ff0000', opacity: 50 }
+  ], files: {}
+});
+const opDrawio = ExcDrawio.convertExcalidrawToDrawio(opacityInput);
+assertIncludes(opDrawio, 'opacity=', 'fixture: drawio includes opacity');
+
+const opKlaxoon = ExcKlaxoon.convertExcalidrawToKlaxoon(opacityInput);
+assertIncludes(opKlaxoon, 'opacity="0.50"', 'fixture: klaxoon SVG has opacity attribute');
+
+const opPenpot = JSON.parse(ExcPenpot.convertExcalidrawToPenpot(opacityInput));
+const opShape = Object.values(opPenpot.shapes).find(s => s.name && s.name.startsWith('rectangle_'));
+if (opShape) {
+  assert(opShape.opacity === 0.5, 'fixture: penpot opacity is 0.5');
+}
+
+// Dashed stroke
+const dashedInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'rectangle', id: 'da1', x: 0, y: 0, width: 100, height: 50,
+      strokeColor: '#000', strokeStyle: 'dashed', strokeWidth: 2 }
+  ], files: {}
+});
+const daDrawio = ExcDrawio.convertExcalidrawToDrawio(dashedInput);
+assertIncludes(daDrawio, 'dashed=1', 'fixture: drawio dashed stroke');
+
+const daKlaxoon = ExcKlaxoon.convertExcalidrawToKlaxoon(dashedInput);
+assertIncludes(daKlaxoon, 'stroke-dasharray', 'fixture: klaxoon SVG has dasharray');
+
+const daPenpot = JSON.parse(ExcPenpot.convertExcalidrawToPenpot(dashedInput));
+const daShape = Object.values(daPenpot.shapes).find(s => s.name && s.name.startsWith('rectangle_'));
+if (daShape) {
+  assert(daShape.strokes[0].strokeStyle === 'dashed', 'fixture: penpot dashed strokeStyle');
+}
+
+// Ellipse
+const ellipseInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'ellipse', id: 'e1', x: 50, y: 50, width: 120, height: 80,
+      strokeColor: '#333', backgroundColor: '#0f0' }
+  ], files: {}
+});
+const elDrawio = ExcDrawio.convertExcalidrawToDrawio(ellipseInput);
+assertIncludes(elDrawio, 'shape=ellipse', 'fixture: drawio ellipse shape');
+
+const elKlaxoon = ExcKlaxoon.convertExcalidrawToKlaxoon(ellipseInput);
+assertMatch(elKlaxoon, /<ellipse\s/, 'fixture: klaxoon SVG has ellipse element');
+
+const elPenpot = JSON.parse(ExcPenpot.convertExcalidrawToPenpot(ellipseInput));
+const elShape = Object.values(elPenpot.shapes).find(s => s.type === 'circle');
+assert(!!elShape, 'fixture: penpot maps ellipse to circle type');
+
+// Diamond with bound text (regression: content must stay as path array)
+const diaTextInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'diamond', id: 'dt1', x: 0, y: 0, width: 100, height: 80, strokeColor: '#000' },
+    { type: 'text', id: 'dt_txt', x: 10, y: 20, width: 80, height: 20,
+      text: 'Decision', fontSize: 16, strokeColor: '#000', containerId: 'dt1' }
+  ], files: {}
+});
+const dtPenpot = JSON.parse(ExcPenpot.convertExcalidrawToPenpot(diaTextInput));
+const dtShapes = Object.values(dtPenpot.shapes);
+const dtDiamond = dtShapes.find(s => s.name && s.name.startsWith('diamond_'));
+assert(dtDiamond && Array.isArray(dtDiamond.content),
+  'fixture: diamond with bound text keeps path array in content');
+const dtLabel = dtShapes.find(s => s.name && s.name.startsWith('label_'));
+assert(dtLabel && dtLabel.type === 'text',
+  'fixture: diamond bound text creates sibling label shape');
+assert(dtLabel && dtLabel.content && dtLabel.content.type === 'root',
+  'fixture: diamond label has rich text content');
+
+// Arrow with no arrowhead
+const lineInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'line', id: 'ln1', x: 0, y: 0, width: 200, height: 0,
+      points: [[0,0],[200,0]], strokeColor: '#000', strokeWidth: 1 }
+  ], files: {}
+});
+const lnDrawio = ExcDrawio.convertExcalidrawToDrawio(lineInput);
+assertIncludes(lnDrawio, 'endArrow=none', 'fixture: drawio line has endArrow=none');
+
+const lnMermaid = ExcMermaid.convertExcalidrawToMermaid(lineInput);
+// Lines without bindings are skipped in mermaid (no connected nodes)
+assert(typeof lnMermaid === 'string', 'fixture: mermaid handles bare line');
+
+const lnKlaxoon = ExcKlaxoon.convertExcalidrawToKlaxoon(lineInput);
+assertNotIncludes(lnKlaxoon, 'marker-end', 'fixture: klaxoon SVG line has no arrow marker');
+
+// Klaxoon SVG well-formedness
+const klxOut = ExcKlaxoon.convertExcalidrawToKlaxoon(fixture);
+assert(klxOut.startsWith('<?xml'), 'fixture: klaxoon output starts with XML declaration');
+assert(klxOut.endsWith('</svg>'), 'fixture: klaxoon output ends with </svg>');
+// Count opening and closing tags match (basic well-formedness check)
+const openTags = (klxOut.match(/<[a-z][^/]*?>/gi) || []).length;
+const closeTags = (klxOut.match(/<\/[a-z]+>/gi) || []).length;
+const selfClose = (klxOut.match(/<[a-z][^>]*\/>/gi) || []).length;
+// This is a rough check — not exact, but catches major mismatches
+assert(Math.abs(openTags - closeTags) < 5, 'fixture: klaxoon SVG tags roughly balanced');
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // EDGE CASES
 // ═══════════════════════════════════════════════════════════════════════════════
 section('Edge cases');
