@@ -220,28 +220,21 @@
       shapeObjects[sid] = shape;
       childIds.push(sid);
 
-      // For rect/circle: put text directly on the shape via content field
-      // For path types (diamond, freedraw): content is path data, so create sibling text
+      // All bound text becomes a sibling text shape at the frame level.
+      // Penpot crashes if rect/circle have content (text) or if text shapes are
+      // children of non-frame shapes. Safest approach: always create a separate
+      // text shape positioned on top of the container.
       if(boundText){
-        if(shape.type === 'path'){
-          // Path shapes use content for path data — create a sibling text shape
-          var btid = uuid();
-          var bts = makeShape(btid, 'text', 'label_'+boundText.id.slice(0,6), sx, sy, sw, sh, boundText);
-          bts.fills = []; bts.strokes = [];
-          bts.parentId = userFrameId; bts.frameId = userFrameId;
-          bts.content = buildTextContent(boundText.text, boundText.fontSize,
-            mapFontFamily(boundText.fontFamily), boundText.textAlign,
-            mapColor(boundText.strokeColor)||'#000000');
-          bts.growType = 'auto-width';
-          shapeObjects[btid] = bts;
-          childIds.push(btid);
-        } else {
-          // rect/circle: text content goes directly on the shape
-          shape.content = buildTextContent(boundText.text, boundText.fontSize,
-            mapFontFamily(boundText.fontFamily), boundText.textAlign,
-            mapColor(boundText.strokeColor)||'#000000');
-          shape.growType = 'fixed';
-        }
+        var btid = uuid();
+        var bts = makeShape(btid, 'text', 'label_'+boundText.id.slice(0,6), sx, sy, sw, sh, boundText);
+        bts.fills = []; bts.strokes = [];
+        bts.parentId = userFrameId; bts.frameId = userFrameId;
+        bts.content = buildTextContent(boundText.text, boundText.fontSize,
+          mapFontFamily(boundText.fontFamily), boundText.textAlign,
+          mapColor(boundText.strokeColor)||'#000000');
+        bts.growType = 'auto-width';
+        shapeObjects[btid] = bts;
+        childIds.push(btid);
       }
     }
 

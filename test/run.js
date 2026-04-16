@@ -283,9 +283,12 @@ if (ppObj) {
     assert(rectShape.transformInverse, 'penpot: rect has transformInverse (camelCase)');
     assert(rectShape.parentId, 'penpot: rect has parentId (camelCase)');
     assert(rectShape.frameId, 'penpot: rect has frameId (camelCase)');
-    // Bound text is stored directly on the shape (not as child — avoids Penpot stack overflow)
-    assert(rectShape.content && rectShape.content.type === 'root', 'penpot: rect has text content directly');
-    assert(rectShape.growType === 'fixed', 'penpot: rect with text has growType fixed');
+    // Bound text is a sibling text shape (not content on rect, not child shape)
+    assert(!rectShape.content || rectShape.content.type !== 'root',
+      'penpot: rect does NOT have text content (avoids stack overflow)');
+    // There should be a label shape for the bound text
+    const rectLabels = shapeList.filter(s => s.type === 'text' && s.name && s.name.startsWith('label_'));
+    assert(rectLabels.length > 0, 'penpot: bound text creates sibling label shapes');
   }
 
   // Ellipse shape (Penpot calls it "circle")
@@ -393,12 +396,12 @@ if (ppObj) {
   assert(nonFramesWithShapes.length === 0,
     `penpot-regression: no non-frame shape has children (found ${nonFramesWithShapes.length})`);
 
-  // Rect shapes with text should have content.type === 'root' AND growType === 'fixed'
-  const rectsWithContent = shapeList.filter(s => s.type === 'rect' && s.content && s.content.type === 'root');
-  for (const r of rectsWithContent) {
-    assert(r.growType === 'fixed',
-      `penpot-regression: rect "${r.name}" with text content has growType=fixed`);
-  }
+  // No rect or circle should have text content (content.type === 'root')
+  // This crashes Penpot's workspace tree walker
+  const rectsWithTextContent = shapeList.filter(s =>
+    (s.type === 'rect' || s.type === 'circle') && s.content && s.content.type === 'root');
+  assert(rectsWithTextContent.length === 0,
+    `penpot-regression: no rect/circle has text content (found ${rectsWithTextContent.length})`);
 
   // Diamond path content must be an array (not text object)
   const diamonds = shapeList.filter(s => s.name && s.name.startsWith('diamond_'));
@@ -445,7 +448,7 @@ if (ppObj) {
     }
   }
 
-  // Multi-line text: test with dedicated input
+  // Multi-line text: test with dedicated input (bound text becomes sibling label)
   const multiLineInput = JSON.stringify({
     type: 'excalidraw', version: 2,
     elements: [
@@ -456,12 +459,16 @@ if (ppObj) {
   });
   const mlPenpot = JSON.parse(ExcPenpot.convertExcalidrawToPenpot(multiLineInput));
   const mlShapes = Object.values(mlPenpot.shapes);
-  const mlRect = mlShapes.find(s => s.type === 'rect');
-  assert(mlRect && mlRect.content && mlRect.content.type === 'root', 'penpot-text: multi-line rect has content');
-  if (mlRect && mlRect.content) {
-    const paraCount = mlRect.content.children[0].children.length;
+  const mlLabel = mlShapes.find(s => s.type === 'text' && s.name && s.name.startsWith('label_'));
+  assert(mlLabel && mlLabel.content && mlLabel.content.type === 'root', 'penpot-text: multi-line label has content');
+  if (mlLabel && mlLabel.content) {
+    const paraCount = mlLabel.content.children[0].children.length;
     assert(paraCount === 3, `penpot-text: multi-line text produces 3 paragraphs (got ${paraCount})`);
   }
+  // The rect itself must NOT have text content
+  const mlRect = mlShapes.find(s => s.type === 'rect');
+  assert(mlRect && (!mlRect.content || mlRect.content.type !== 'root'),
+    'penpot-text: rect does not have text content (text is sibling label)');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
