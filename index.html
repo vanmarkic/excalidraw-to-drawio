@@ -9,7 +9,7 @@
   <body>
     <header>
       <h1>Excalidraw Converter</h1>
-      <p class="sub">Client-side conversion of Excalidraw JSON to draw.io, Mermaid, or Penpot. No uploads.</p>
+      <p class="sub">Client-side conversion of Excalidraw JSON to draw.io, Mermaid, Klaxoon, or Penpot. No uploads.</p>
     </header>
 
     <main>
@@ -31,7 +31,8 @@
             <label for="formatSelect">Export format:</label>
             <select id="formatSelect">
               <option value="drawio" selected>draw.io (.drawio)</option>
-              <option value="mermaid">Mermaid (.md)</option>
+              <option value="mermaid">Mermaid (.mmd)</option>
+              <option value="klaxoon">Klaxoon (vector SVG)</option>
               <option value="penpot">Penpot (.penpot)</option>
             </select>
           </div>
@@ -60,6 +61,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha512-XMVd28F1oH/O71fzwBnV7HucLxVwtxf26XV8P4wPk26EDFuGW4A0GgR/UfBQ1av+lXyETHvM0DToaSGNMOuNQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="converter-drawio.js"></script>
     <script src="converter-mermaid.js"></script>
+    <script src="converter-klaxoon.js"></script>
     <script src="converter-penpot.js"></script>
     <script src="main.js"></script>
   </body>

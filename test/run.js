@@ -58,6 +58,7 @@ vm.createContext(sandbox);
 const converterFiles = [
   'converter-drawio.js',
   'converter-mermaid.js',
+  'converter-klaxoon.js',
   'converter-penpot.js',
 ];
 
@@ -71,7 +72,7 @@ for (const file of converterFiles) {
   }
 }
 
-const { ExcDrawio, ExcMermaid, ExcPenpot } = sandbox.window;
+const { ExcDrawio, ExcMermaid, ExcKlaxoon, ExcPenpot } = sandbox.window;
 
 // ── Load fixture ─────────────────────────────────────────────────────────────
 
@@ -155,6 +156,65 @@ assertNotIncludes(mermaidOut, 'rect_deleted', 'mermaid: deleted element excluded
 // Accepts object input
 const mermaidOut2 = ExcMermaid.convertExcalidrawToMermaid(fixtureObj);
 assert(typeof mermaidOut2 === 'string' && mermaidOut2.includes('flowchart'), 'mermaid: accepts object input');
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// KLAXOON TESTS (vector SVG output)
+// ═══════════════════════════════════════════════════════════════════════════════
+section('Klaxoon converter (SVG)');
+
+const klaxoonOut = ExcKlaxoon.convertExcalidrawToKlaxoon(fixture);
+
+// Valid SVG
+assert(typeof klaxoonOut === 'string', 'klaxoon: returns a string');
+assertIncludes(klaxoonOut, '<svg', 'klaxoon: contains <svg');
+assertIncludes(klaxoonOut, '</svg>', 'klaxoon: closes </svg>');
+assertIncludes(klaxoonOut, 'xmlns="http://www.w3.org/2000/svg"', 'klaxoon: has SVG namespace');
+assertIncludes(klaxoonOut, 'viewBox=', 'klaxoon: has viewBox');
+
+// Shapes present
+assertMatch(klaxoonOut, /<rect\s/, 'klaxoon: has rect elements');
+assertMatch(klaxoonOut, /<ellipse\s/, 'klaxoon: has ellipse elements');
+assertMatch(klaxoonOut, /<polygon\s/, 'klaxoon: has polygon (diamond)');
+
+// Colors preserved
+assertIncludes(klaxoonOut, '#a5d8ff', 'klaxoon: rect fill color preserved');
+assertIncludes(klaxoonOut, '#b2f2bb', 'klaxoon: ellipse fill color preserved');
+assertIncludes(klaxoonOut, '#ffec99', 'klaxoon: diamond fill color preserved');
+
+// Stroke colors
+assertIncludes(klaxoonOut, '#1e1e1e', 'klaxoon: stroke color preserved');
+
+// Rounded rectangle
+assertMatch(klaxoonOut, /rx="12"/, 'klaxoon: rounded rectangle has rx');
+
+// Text rendered
+assertIncludes(klaxoonOut, '>Start<', 'klaxoon: text "Start" rendered');
+assertIncludes(klaxoonOut, '>End<', 'klaxoon: text "End" rendered');
+assertIncludes(klaxoonOut, '>Check?<', 'klaxoon: text "Check?" rendered');
+
+// Arrow markers
+assertMatch(klaxoonOut, /<marker\s/, 'klaxoon: has arrow markers');
+assertIncludes(klaxoonOut, 'marker-end="url(#arrowEnd)"', 'klaxoon: arrow has marker-end');
+assertIncludes(klaxoonOut, 'arrowEnd', 'klaxoon: arrowEnd marker defined');
+
+// Arrow with dashed stroke
+assertMatch(klaxoonOut, /stroke-dasharray/, 'klaxoon: dashed line has dasharray');
+
+// Edge label
+assertIncludes(klaxoonOut, '>Yes<', 'klaxoon: edge label "Yes" rendered');
+
+// Standalone text
+assertIncludes(klaxoonOut, '>A standalone note<', 'klaxoon: standalone text rendered');
+
+// Freedraw as path
+assertMatch(klaxoonOut, /<path\s/, 'klaxoon: has path elements (freedraw/arrows)');
+
+// Deleted elements excluded
+assertNotIncludes(klaxoonOut, '999', 'klaxoon: deleted element excluded');
+
+// Accepts object input
+const klaxoonOut2 = ExcKlaxoon.convertExcalidrawToKlaxoon(fixtureObj);
+assert(typeof klaxoonOut2 === 'string' && klaxoonOut2.includes('<svg'), 'klaxoon: accepts object input');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PENPOT TESTS
@@ -298,6 +358,7 @@ section('Edge cases');
 const emptyInput = JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {} });
 assert(typeof ExcDrawio.convertExcalidrawToDrawio(emptyInput) === 'string', 'edge: drawio handles empty elements');
 assert(typeof ExcMermaid.convertExcalidrawToMermaid(emptyInput) === 'string', 'edge: mermaid handles empty elements');
+assert(typeof ExcKlaxoon.convertExcalidrawToKlaxoon(emptyInput) === 'string', 'edge: klaxoon handles empty elements');
 assert(typeof ExcPenpot.convertExcalidrawToPenpot(emptyInput) === 'string', 'edge: penpot handles empty elements');
 
 // Missing optional fields
@@ -308,6 +369,7 @@ const minimalRect = JSON.stringify({
 });
 assert(typeof ExcDrawio.convertExcalidrawToDrawio(minimalRect) === 'string', 'edge: drawio handles minimal element');
 assert(typeof ExcMermaid.convertExcalidrawToMermaid(minimalRect) === 'string', 'edge: mermaid handles minimal element');
+assert(typeof ExcKlaxoon.convertExcalidrawToKlaxoon(minimalRect) === 'string', 'edge: klaxoon handles minimal element');
 assert(typeof ExcPenpot.convertExcalidrawToPenpot(minimalRect) === 'string', 'edge: penpot handles minimal element');
 
 // Negative coordinates
@@ -323,6 +385,7 @@ const negDrawio = ExcDrawio.convertExcalidrawToDrawio(negCoords);
 // Drawio converter shifts coordinates to positive quadrant
 assertNotIncludes(negDrawio, 'x="-', 'edge: drawio no negative x in geometry');
 assert(typeof ExcMermaid.convertExcalidrawToMermaid(negCoords) === 'string', 'edge: mermaid handles negative coords');
+assert(typeof ExcKlaxoon.convertExcalidrawToKlaxoon(negCoords) === 'string', 'edge: klaxoon handles negative coords');
 assert(typeof ExcPenpot.convertExcalidrawToPenpot(negCoords) === 'string', 'edge: penpot handles negative coords');
 
 // Special characters in text
