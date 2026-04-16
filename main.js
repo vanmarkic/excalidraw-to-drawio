@@ -14,7 +14,7 @@
   const formatMeta = {
     drawio:  { label: 'draw.io XML',    ext: '.drawio',  mime: 'application/xml' },
     mermaid: { label: 'Mermaid',         ext: '.mmd',     mime: 'text/plain' },
-    penpot:  { label: 'Penpot JSON',     ext: '.json',    mime: 'application/json' }
+    penpot:  { label: 'Penpot',           ext: '.penpot',  mime: 'application/zip' }
   };
 
   function getFormat(){ return formatSelect.value; }
@@ -269,11 +269,25 @@
     }, 500);
   });
 
-  downloadBtn.addEventListener('click', () => {
+  downloadBtn.addEventListener('click', async () => {
     if(!lastOutput) return;
     const fmt = getFormat();
     const meta = formatMeta[fmt] || formatMeta.drawio;
-    const blob = new Blob([lastOutput], { type: meta.mime });
+
+    let blob;
+    if(fmt === 'penpot'){
+      // Penpot produces a real .penpot ZIP via JSZip
+      try {
+        const data = inputText.value.trim();
+        blob = await window.ExcPenpot.convertExcalidrawToPenpotBlob(data);
+      } catch(err){
+        console.error(err);
+        info.textContent = 'Error generating .penpot file: ' + (err && err.message ? err.message : String(err));
+        return;
+      }
+    } else {
+      blob = new Blob([lastOutput], { type: meta.mime });
+    }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${fileBaseName}${meta.ext}`;

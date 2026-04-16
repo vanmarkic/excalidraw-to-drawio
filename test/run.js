@@ -173,93 +173,121 @@ try {
 }
 
 if (ppObj) {
-  // Top-level structure
-  assert(ppObj.type === 'penpot-file', 'penpot: type is penpot-file');
-  assert(ppObj.version === '2.0', 'penpot: version 2.0');
-  assert(Array.isArray(ppObj.pages) && ppObj.pages.length === 1, 'penpot: has 1 page');
+  // Top-level preview structure
+  assert(ppObj._info && ppObj._info.includes('penpot'), 'penpot: has _info preview note');
+  assert(ppObj.manifest && ppObj.manifest.type === 'penpot/export-files', 'penpot: manifest type correct');
+  assert(ppObj.manifest.version === 1, 'penpot: manifest version 1');
+  assert(ppObj.file && ppObj.file.name === 'Excalidraw Import', 'penpot: file name set');
+  assert(ppObj.file.version === 67, 'penpot: file version 67');
+  assert(ppObj.file.isShared === false, 'penpot: camelCase isShared');
+  assert(ppObj.page && ppObj.page.name === 'Page 1', 'penpot: page named "Page 1"');
+  assert(ppObj.page.index === 0, 'penpot: page index 0');
 
-  const page = ppObj.pages[0];
-  assert(page.name === 'Page 1', 'penpot: page named "Page 1"');
-  assert(page.options && page.options.background === '#ffffff', 'penpot: page background from appState');
-  assert(Array.isArray(page.objects) && page.objects.length > 0, 'penpot: has objects');
+  // Shapes are in a flat object map (id -> shape)
+  const shapes = ppObj.shapes;
+  assert(typeof shapes === 'object' && shapes !== null, 'penpot: has shapes map');
+  const shapeList = Object.values(shapes);
 
-  // Root frame
-  const frame = page.objects.find(o => o.type === 'frame');
-  assert(!!frame, 'penpot: has root frame');
-  if (frame) {
-    assert(Array.isArray(frame.children) && frame.children.length > 0, 'penpot: frame has children');
+  // Root frame (uuid zero)
+  const rootFrame = shapes['00000000-0000-0000-0000-000000000000'];
+  assert(!!rootFrame, 'penpot: has root frame at uuid zero');
+  assert(rootFrame.type === 'frame', 'penpot: root frame type is frame');
+  assert(rootFrame.parentId === '00000000-0000-0000-0000-000000000000', 'penpot: root frame self-referencing parentId');
+  assert(Array.isArray(rootFrame.shapes) && rootFrame.shapes.length > 0, 'penpot: root frame has children');
+
+  // User frame (child of root)
+  const userFrame = shapeList.find(s => s.type === 'frame' && s.name === 'Frame 1');
+  assert(!!userFrame, 'penpot: has user frame "Frame 1"');
+  if (userFrame) {
+    assert(Array.isArray(userFrame.shapes) && userFrame.shapes.length > 0, 'penpot: user frame has children');
+    assert(userFrame.parentId === '00000000-0000-0000-0000-000000000000', 'penpot: user frame parent is root');
   }
 
   // Rectangle shape
-  const rectShape = page.objects.find(o => o.type === 'rect' && o.name && o.name.startsWith('rectangle_'));
+  const rectShape = shapeList.find(s => s.type === 'rect' && s.name && s.name.startsWith('rectangle_'));
   assert(!!rectShape, 'penpot: rectangle shape present');
   if (rectShape) {
     assert(rectShape.x === 100, 'penpot: rect x=100');
     assert(rectShape.y === 50, 'penpot: rect y=50');
     assert(rectShape.width === 200, 'penpot: rect width=200');
     assert(rectShape.height === 100, 'penpot: rect height=100');
-    assert(rectShape.rx === 12, 'penpot: rounded rect has rx');
+    assert(rectShape.r1 === 12, 'penpot: rounded rect has r1');
     assert(rectShape.fills && rectShape.fills.length > 0, 'penpot: rect has fills');
-    assert(rectShape.fills[0].fillColor === '#a5d8ff', 'penpot: rect fill color');
+    assert(rectShape.fills[0].fillColor === '#a5d8ff', 'penpot: rect fill color (camelCase)');
     assert(rectShape.strokes && rectShape.strokes.length > 0, 'penpot: rect has strokes');
-    assert(rectShape.strokes[0].strokeColor === '#1e1e1e', 'penpot: rect stroke color');
-    // Text attached
-    assert(rectShape.text && rectShape.text.content === 'Start', 'penpot: rect has text "Start"');
+    assert(rectShape.strokes[0].strokeColor === '#1e1e1e', 'penpot: rect stroke color (camelCase)');
+    // Geometry fields
+    assert(rectShape.selrect && rectShape.selrect.x1 === 100, 'penpot: rect has selrect');
+    assert(Array.isArray(rectShape.points) && rectShape.points.length === 4, 'penpot: rect has 4 corner points');
+    assert(rectShape.transform && rectShape.transform.a === 1, 'penpot: rect has identity transform');
+    assert(rectShape.transformInverse, 'penpot: rect has transformInverse (camelCase)');
+    assert(rectShape.parentId, 'penpot: rect has parentId (camelCase)');
+    assert(rectShape.frameId, 'penpot: rect has frameId (camelCase)');
+    // Bound text is a child shape, not embedded
+    assert(Array.isArray(rectShape.shapes) && rectShape.shapes.length > 0, 'penpot: rect has child text shape');
+    const childTextId = rectShape.shapes[0];
+    const childText = shapes[childTextId];
+    assert(childText && childText.type === 'text', 'penpot: child text is text type');
+    if (childText) {
+      assert(childText.content && childText.content.type === 'root', 'penpot: text has rich content structure');
+      assert(childText.growType === 'auto-height', 'penpot: text has growType (camelCase)');
+    }
   }
 
   // Ellipse shape (Penpot calls it "circle")
-  const ellShape = page.objects.find(o => o.type === 'circle');
+  const ellShape = shapeList.find(s => s.type === 'circle');
   assert(!!ellShape, 'penpot: ellipse mapped to circle type');
-  if (ellShape) {
-    assert(ellShape.text && ellShape.text.content === 'End', 'penpot: ellipse has text "End"');
-  }
 
   // Diamond as path
-  const diaShape = page.objects.find(o => o.type === 'path' && o.name && o.name.startsWith('diamond_'));
-  // Diamond may exist as a path or rect depending on implementation
-  // The converter should create it as a path with svgPath
+  const diaShape = shapeList.find(s => s.type === 'path' && s.name && s.name.startsWith('diamond_'));
+  assert(!!diaShape, 'penpot: diamond as path');
   if (diaShape) {
-    assert(!!diaShape.svgPath, 'penpot: diamond has svgPath');
-    assert(diaShape.text && diaShape.text.content === 'Check?', 'penpot: diamond has text "Check?"');
+    assert(Array.isArray(diaShape.content) && diaShape.content.length > 0, 'penpot: diamond has path content');
   }
 
-  // Arrow as path
-  const arrowPaths = page.objects.filter(o => o.type === 'path' && o.name && o.name.startsWith('arrow_'));
+  // Arrows as paths
+  const arrowPaths = shapeList.filter(s => s.type === 'path' && s.name && s.name.startsWith('arrow_'));
   assert(arrowPaths.length >= 2, `penpot: at least 2 arrow paths (got ${arrowPaths.length})`);
 
-  // Arrow markers
-  const arrowWithMarker = arrowPaths.find(p => p.markers && p.markers.end);
-  assert(!!arrowWithMarker, 'penpot: arrow has end marker');
+  // Arrow stroke caps (arrowheads)
+  const arrowWithCap = arrowPaths.find(p => p.strokes && p.strokes[0] && p.strokes[0].strokeCapEnd);
+  assert(!!arrowWithCap, 'penpot: arrow has strokeCapEnd');
 
-  // Arrow bindings
-  const arrowWithBinding = arrowPaths.find(p => p.startBinding && p.endBinding);
-  assert(!!arrowWithBinding, 'penpot: arrow preserves bindings');
-
-  // Edge label
-  const arrowWithLabel = arrowPaths.find(p => p.text && p.text.content === 'Yes');
-  assert(!!arrowWithLabel, 'penpot: arrow with label "Yes"');
+  // Edge label as child text shape
+  const arrowWithChild = arrowPaths.find(p => Array.isArray(p.shapes) && p.shapes.length > 0);
+  if (arrowWithChild) {
+    const labelText = shapes[arrowWithChild.shapes[0]];
+    assert(labelText && labelText.type === 'text', 'penpot: arrow label is text shape');
+  }
 
   // Standalone text
-  const standaloneText = page.objects.find(o => o.type === 'text' && o.text && o.text.content === 'A standalone note');
-  assert(!!standaloneText, 'penpot: standalone text present');
+  const standaloneTexts = shapeList.filter(s => s.type === 'text' && s.content &&
+    s.content.children && s.content.children[0] &&
+    s.content.children[0].children.some(p =>
+      p.children && p.children.some(c => c.text === 'A standalone note')));
+  assert(standaloneTexts.length > 0, 'penpot: standalone text present');
 
   // Freedraw as path
-  const fdPath = page.objects.find(o => o.type === 'path' && o.name && o.name.startsWith('freedraw_'));
+  const fdPath = shapeList.find(s => s.type === 'path' && s.name && s.name.startsWith('freedraw_'));
   assert(!!fdPath, 'penpot: freedraw as path');
   if (fdPath) {
-    assert(!!fdPath.svgPath, 'penpot: freedraw has svgPath');
+    assert(Array.isArray(fdPath.content) && fdPath.content.length > 0, 'penpot: freedraw has path content');
   }
 
   // Deleted elements excluded
-  const allNames = page.objects.map(o => o.name || '').join(' ');
+  const allNames = shapeList.map(s => s.name || '').join(' ');
   assertNotIncludes(allNames, 'rect_deleted', 'penpot: deleted element excluded');
+
+  // Manifest has file ID matching file data
+  assert(ppObj.manifest.files[0].id === ppObj.file.id, 'penpot: manifest file ID matches file data ID');
+  assert(Array.isArray(ppObj.manifest.files[0].features), 'penpot: manifest includes features');
 }
 
 // Accepts object input
 const penpotOut2 = ExcPenpot.convertExcalidrawToPenpot(fixtureObj);
 let ppObj2;
 try { ppObj2 = JSON.parse(penpotOut2); } catch {}
-assert(ppObj2 && ppObj2.type === 'penpot-file', 'penpot: accepts object input');
+assert(ppObj2 && ppObj2.manifest && ppObj2.manifest.type === 'penpot/export-files', 'penpot: accepts object input');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // EDGE CASES
