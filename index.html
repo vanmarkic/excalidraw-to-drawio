@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Excalidraw → draw.io Converter (Web)</title>
+    <title>Excalidraw Converter (Web)</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header>
-      <h1>Excalidraw → draw.io Converter</h1>
-      <p class="sub">Client-side conversion of Excalidraw JSON to draw.io (mxGraph) XML. No uploads.</p>
+      <h1>Excalidraw Converter</h1>
+      <p class="sub">Client-side conversion of Excalidraw JSON to draw.io, Mermaid, Klaxoon, or Penpot. No uploads.</p>
     </header>
 
     <main>
@@ -27,13 +27,22 @@
 
       <section class="output">
         <div class="actions">
-          <button id="downloadBtn" type="button" disabled>Download .drawio</button>
+          <div class="format-selector">
+            <label for="formatSelect">Export format:</label>
+            <select id="formatSelect">
+              <option value="drawio" selected>draw.io (.drawio)</option>
+              <option value="mermaid">Mermaid (.md)</option>
+              <option value="klaxoon">Klaxoon (.json)</option>
+              <option value="penpot">Penpot (.json)</option>
+            </select>
+          </div>
+          <button id="downloadBtn" type="button" disabled>Download</button>
         </div>
 
         <div class="split">
           <div>
-            <h3>draw.io XML</h3>
-            <textarea id="outputText" readonly placeholder="Converted draw.io XML will appear here..." wrap="off" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+            <h3 id="outputLabel">draw.io XML</h3>
+            <textarea id="outputText" readonly placeholder="Converted output will appear here..." wrap="off" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
           </div>
           <div>
             <h3>Info</h3>
@@ -50,6 +59,9 @@
     </footer>
 
     <script src="converter-drawio.js"></script>
+    <script src="converter-mermaid.js"></script>
+    <script src="converter-klaxoon.js"></script>
+    <script src="converter-penpot.js"></script>
     <script src="main.js"></script>
   </body>
 </html>

@@ -3,11 +3,22 @@
   const inputText = document.getElementById('inputText');
   const downloadBtn = document.getElementById('downloadBtn');
   const outputText = document.getElementById('outputText');
+  const outputLabel = document.getElementById('outputLabel');
   const info = document.getElementById('info');
   const sampleBtn = document.getElementById('sampleBtn');
+  const formatSelect = document.getElementById('formatSelect');
 
   let lastOutput = '';
   let fileBaseName = 'diagram';
+
+  const formatMeta = {
+    drawio:  { label: 'draw.io XML',    ext: '.drawio',  mime: 'application/xml' },
+    mermaid: { label: 'Mermaid',         ext: '.mmd',     mime: 'text/plain' },
+    klaxoon: { label: 'Klaxoon JSON',    ext: '.json',    mime: 'application/json' },
+    penpot:  { label: 'Penpot JSON',     ext: '.json',    mime: 'application/json' }
+  };
+
+  function getFormat(){ return formatSelect.value; }
 
   async function performConversion(){
     info.textContent = '';
@@ -16,16 +27,38 @@
     try {
       const data = inputText.value.trim();
       if(!data) return;
-      const out = window.ExcDrawio.convertExcalidrawToDrawio(data);
+      const fmt = getFormat();
+      let out;
+      switch(fmt){
+        case 'mermaid':
+          out = window.ExcMermaid.convertExcalidrawToMermaid(data);
+          break;
+        case 'klaxoon':
+          out = window.ExcKlaxoon.convertExcalidrawToKlaxoon(data);
+          break;
+        case 'penpot':
+          out = window.ExcPenpot.convertExcalidrawToPenpot(data);
+          break;
+        case 'drawio':
+        default:
+          out = window.ExcDrawio.convertExcalidrawToDrawio(data);
+          break;
+      }
       outputText.value = out;
       lastOutput = out;
       downloadBtn.disabled = false;
-      info.textContent = `Conversion successful. Ready to download ${fileBaseName}.drawio`;
+      const meta = formatMeta[fmt] || formatMeta.drawio;
+      outputLabel.textContent = meta.label;
+      info.textContent = `Conversion successful (${meta.label}). Ready to download ${fileBaseName}${meta.ext}`;
     } catch(err){
       console.error(err);
       info.textContent = 'Error: ' + (err && err.message ? err.message : String(err));
     }
   }
+
+  formatSelect.addEventListener('change', () => {
+    if(inputText.value.trim()) performConversion();
+  });
 
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
@@ -242,10 +275,12 @@
 
   downloadBtn.addEventListener('click', () => {
     if(!lastOutput) return;
-    const blob = new Blob([lastOutput], { type: 'application/xml' });
+    const fmt = getFormat();
+    const meta = formatMeta[fmt] || formatMeta.drawio;
+    const blob = new Blob([lastOutput], { type: meta.mime });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${fileBaseName}.drawio`;
+    a.download = `${fileBaseName}${meta.ext}`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   });
