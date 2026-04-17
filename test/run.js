@@ -718,7 +718,7 @@ assertIncludes(tabularOut, '### Adjacency ###', 'tabular: contains Adjacency sec
 assertIncludes(tabularOut, '### Summary ###', 'tabular: contains Summary section');
 
 // Header rows
-assertIncludes(tabularOut, 'id,label,persona,rank,votes,kind,type', 'tabular: Nodes header present with persona/rank/votes');
+assertIncludes(tabularOut, 'id,label,category,jtbdGroup,persona,rank,votes', 'tabular: Nodes header present with category/jtbdGroup/persona/rank/votes');
 assertIncludes(tabularOut, 'id,source,sourceLabel,target,targetLabel,label', 'tabular: Edges header present');
 assertIncludes(tabularOut, '### Votes ###', 'tabular: Votes section present');
 
@@ -918,6 +918,67 @@ assert(wMetric('persona:Pink') === 1, 'tabular: summary counts 1 Pink persona');
 assert(wMetric('rank1') === 1, 'tabular: summary counts 1 rank-1 node');
 assert(wMetric('rank4') === 1, 'tabular: summary counts 1 rank-4 node (dashed)');
 assert(wMetric('totalVotes') === 3, 'tabular: summary totalVotes = 3');
+
+// Nodes sorted by votes desc by default
+const workshopNodesSheet = workshopSheets.find(s => s.name === 'Nodes');
+const firstNodeId = workshopNodesSheet.rows[0][0];
+assert(firstNodeId === 'sY', `tabular: highest-voted node sorts first (got ${firstNodeId})`);
+const firstVotes = workshopNodesSheet.rows[0][6]; // votes column
+assert(firstVotes === 2, `tabular: first row votes=2 (got ${firstVotes})`);
+
+// JTBD categorisation: 3 rectangles sharing one groupId => all "need"
+const jtbdInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'rectangle', id: 'sit', x:   0, y:  0, width: 200, height: 100,
+      backgroundColor: '#ffc9c9', strokeWidth: 1, groupIds: ['jtbd1'] },
+    { type: 'rectangle', id: 'job', x:   0, y:200, width: 200, height: 100,
+      backgroundColor: '#ffc9c9', strokeWidth: 1, groupIds: ['jtbd1'] },
+    { type: 'rectangle', id: 'out', x:   0, y:400, width: 200, height: 100,
+      backgroundColor: '#ffc9c9', strokeWidth: 1, groupIds: ['jtbd1'] },
+    // Lone rectangle with its own (unique) groupId => datapoint
+    { type: 'rectangle', id: 'lone', x: 500, y:  0, width: 200, height: 100,
+      backgroundColor: '#ffec99', strokeWidth: 1, groupIds: ['aloneGrp'] }
+  ], files: {}
+});
+const jtbdGraph = ExcTabular._extractGraph(jtbdInput);
+const jById = {}; for (const n of jtbdGraph.nodes) jById[n.id] = n;
+assert(jById.sit.category === 'need', 'tabular: shared-group rectangle => category need');
+assert(jById.job.category === 'need', 'tabular: shared-group rectangle (job) => need');
+assert(jById.out.category === 'need', 'tabular: shared-group rectangle (outcome) => need');
+assert(jById.sit.jtbdGroup === 'jtbd1', 'tabular: jtbdGroup populated with shared groupId');
+assert(jById.lone.category === 'datapoint', 'tabular: unshared-group rectangle => datapoint');
+assert(jById.lone.jtbdGroup === '', 'tabular: datapoint has empty jtbdGroup');
+
+const jtbdSummary = ExcTabular._buildSheets(jtbdInput).find(s => s.name === 'Summary');
+const jMetric = (name) => (jtbdSummary.rows.find(r => r[0] === name) || [])[1];
+assert(jMetric('needCount') === 3, 'tabular: summary needCount=3');
+assert(jMetric('datapointCount') === 1, 'tabular: summary datapointCount=1');
+assert(jMetric('jtbdGroupCount') === 1, 'tabular: summary jtbdGroupCount=1');
+
+// Vote specificity: freedraws with multiple shared groupIds match the most
+// specific (most-overlapping) rectangle, not just the first one found.
+const specificityInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    // Inner rect: shares 2 group ids with the freedraw
+    { type: 'rectangle', id: 'inner', x: 0, y: 0, width: 100, height: 100,
+      backgroundColor: '#ffc9c9', strokeWidth: 1,
+      groupIds: ['jtbdOuter','innerGrp'] },
+    // Outer siblings: share 1 group id (jtbdOuter) with the freedraw
+    { type: 'rectangle', id: 'sib1', x: 200, y: 0, width: 100, height: 100,
+      backgroundColor: '#ffc9c9', strokeWidth: 1, groupIds: ['jtbdOuter'] },
+    { type: 'rectangle', id: 'sib2', x: 400, y: 0, width: 100, height: 100,
+      backgroundColor: '#ffc9c9', strokeWidth: 1, groupIds: ['jtbdOuter'] },
+    // Vote belongs to 'inner' (2 shared) over the siblings (1 shared each)
+    { type: 'freedraw', id: 'vote', x: 1000, y: 1000, width: 5, height: 5,
+      groupIds: ['voteGrp','innerGrp','jtbdOuter'], points: [[0,0],[5,5]] }
+  ], files: {}
+});
+const specSheets = ExcTabular._buildSheets(specificityInput);
+const specVotes = specSheets.find(s => s.name === 'Votes').rows;
+assert(specVotes.length === 1, 'tabular: one vote assignment');
+assert(specVotes[0][1] === 'inner', `tabular: vote assigned to most-specific rect (got ${specVotes[0][1]})`);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // REPORT

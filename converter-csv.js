@@ -49,6 +49,13 @@
     return false;
   }
 
+  function sharedGroupCount(a, b){
+    if(!a || !b) return 0;
+    var c = 0;
+    for(var i = 0; i < a.length; i++) if(b.indexOf(a[i]) >= 0) c++;
+    return c;
+  }
+
   function rectArea(r){ return (r.width || 0) * (r.height || 0); }
 
   function centroidInside(fd, r){
@@ -58,23 +65,52 @@
            cy >= r.y && cy <= r.y + r.height;
   }
 
+  // A groupId that contains ≥ 2 rectangle members is a JTBD group. Each
+  // rectangle in that group is a "need" (situation/job/outcome). Rectangles
+  // that aren't in any such group are stand-alone data points.
+  function computeJtbdAssignments(rectangles){
+    var memberCount = {};
+    for(var i = 0; i < rectangles.length; i++){
+      var gs = rectangles[i].groupIds || [];
+      for(var j = 0; j < gs.length; j++){
+        memberCount[gs[j]] = (memberCount[gs[j]] || 0) + 1;
+      }
+    }
+    var assignment = {};
+    for(var k = 0; k < rectangles.length; k++){
+      var best = '', bestCount = 0;
+      var gs2 = rectangles[k].groupIds || [];
+      for(var l = 0; l < gs2.length; l++){
+        var cnt = memberCount[gs2[l]] || 0;
+        if(cnt >= 2 && cnt > bestCount){ best = gs2[l]; bestCount = cnt; }
+      }
+      if(best) assignment[rectangles[k].id] = best;
+    }
+    return assignment;
+  }
+
   function assignVotes(rectangles, freedraws){
-    // Returns array of { freedrawId, targetId, method } and fills votes[rectId].
+    // Prefer the rectangle sharing the most groupIds with the freedraw (most
+    // specific match); on ties, pick the smallest-area rectangle. If no group
+    // match at all, fall back to the smallest rectangle whose bounds contain
+    // the freedraw's centroid.
     var votes = {};
     var assignments = [];
     for(var i = 0; i < rectangles.length; i++) votes[rectangles[i].id] = 0;
 
     for(var f = 0; f < freedraws.length; f++){
       var fd = freedraws[f];
-      var target = null, method = null;
+      var target = null, method = null, bestShared = 0;
 
-      // Prefer shared groupId match
       for(var g = 0; g < rectangles.length; g++){
-        if(shareGroup(fd.groupIds, rectangles[g].groupIds)){
-          target = rectangles[g]; method = 'group'; break;
+        var shared = sharedGroupCount(fd.groupIds, rectangles[g].groupIds);
+        if(shared === 0) continue;
+        if(shared > bestShared ||
+           (shared === bestShared && target && rectArea(rectangles[g]) < rectArea(target))){
+          target = rectangles[g]; bestShared = shared; method = 'group';
         }
       }
-      // Fallback: centroid inside the smallest containing rectangle
+
       if(!target){
         var smallest = null;
         for(var b = 0; b < rectangles.length; b++){
@@ -126,6 +162,9 @@
 
     // Assign freedraw votes to rectangles (prefer groupId, fall back to bounds)
     var voteResult = assignVotes(shapes, freedraws);
+    // JTBD grouping: rectangles that share a groupId with ≥ 2 other rectangles
+    // are "needs" (situation/job/outcome); others are data points.
+    var jtbdAssignment = computeJtbdAssignments(shapes);
 
     // Build node list
     var nodes = [];
@@ -136,6 +175,8 @@
         label: shapeLabel[s.id] || '',
         kind: 'shape',
         type: s.type,
+        category: jtbdAssignment[s.id] ? 'need' : 'datapoint',
+        jtbdGroup: jtbdAssignment[s.id] || '',
         persona: personaFromColor(s.backgroundColor),
         rank: rankFromStroke(s.strokeWidth, s.strokeStyle),
         votes: voteResult.votes[s.id] || 0,
@@ -158,6 +199,8 @@
         label: st.text || '',
         kind: 'text',
         type: 'text',
+        category: '',
+        jtbdGroup: '',
         persona: '',
         rank: '',
         votes: 0,
@@ -215,6 +258,18 @@
         nodes[nodeIndex[endId]].outDegree++;
       }
     }
+
+    // Default sort: votes desc, then rank asc (empty rank last), then label asc.
+    // Nodes and Adjacency rows share this order so the sheets line up.
+    nodes.sort(function(a, b){
+      if((b.votes || 0) !== (a.votes || 0)) return (b.votes || 0) - (a.votes || 0);
+      var ra = (a.rank === '' || a.rank == null) ? 99 : a.rank;
+      var rb = (b.rank === '' || b.rank == null) ? 99 : b.rank;
+      if(ra !== rb) return ra - rb;
+      return String(a.label || '').localeCompare(String(b.label || ''));
+    });
+    nodeIndex = {};
+    for(var ni = 0; ni < nodes.length; ni++) nodeIndex[nodes[ni].id] = ni;
 
     return {
       nodes: nodes,
@@ -298,13 +353,13 @@
 
     var nodesSheet = {
       name: 'Nodes',
-      headers: ['id','label','persona','rank','votes','kind','type',
-                'groupIds','x','y','width','height',
+      headers: ['id','label','category','jtbdGroup','persona','rank','votes',
+                'kind','type','groupIds','x','y','width','height',
                 'backgroundColor','strokeColor','strokeWidth','strokeStyle',
                 'opacity','angle','inDegree','outDegree'],
       rows: graph.nodes.map(function(n){
-        return [n.id, n.label, n.persona, n.rank, n.votes, n.kind, n.type,
-                n.groupIds, n.x, n.y, n.width, n.height,
+        return [n.id, n.label, n.category, n.jtbdGroup, n.persona, n.rank, n.votes,
+                n.kind, n.type, n.groupIds, n.x, n.y, n.width, n.height,
                 n.backgroundColor, n.strokeColor, n.strokeWidth, n.strokeStyle,
                 n.opacity, n.angle, n.inDegree, n.outDegree];
       })
@@ -352,16 +407,24 @@
 
     var personaCounts = {};
     var rankCounts = {};
+    var needCount = 0, datapointCount = 0;
+    var jtbdGroups = {};
     var totalVotes = 0;
     for(var pc = 0; pc < graph.nodes.length; pc++){
       var nn = graph.nodes[pc];
       if(nn.persona) personaCounts[nn.persona] = (personaCounts[nn.persona] || 0) + 1;
       if(nn.rank !== '' && nn.rank != null) rankCounts['rank' + nn.rank] = (rankCounts['rank' + nn.rank] || 0) + 1;
+      if(nn.category === 'need') needCount++;
+      else if(nn.category === 'datapoint') datapointCount++;
+      if(nn.jtbdGroup) jtbdGroups[nn.jtbdGroup] = true;
       totalVotes += nn.votes || 0;
     }
 
     var summaryRows = [
       ['nodeCount', graph.nodes.length],
+      ['needCount', needCount],
+      ['datapointCount', datapointCount],
+      ['jtbdGroupCount', Object.keys(jtbdGroups).length],
       ['edgeCount', graph.edges.length],
       ['totalVotes', totalVotes],
       ['hasCycle', cycles.hasCycle],
