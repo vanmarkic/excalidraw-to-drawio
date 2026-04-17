@@ -18,22 +18,29 @@
 (function(global){
   'use strict';
 
-  // Workshop semantics: colours encode personas, stroke width encodes rank,
-  // freedraw scribbles are dot votes (grouped via groupIds or bounded inside
-  // the target sticky).
+  // Workshop semantics: colours encode personas, stroke width + style encode
+  // rank (1 = most important), freedraw scribbles are dot votes (grouped via
+  // groupIds or bounded inside the target sticky).
   var PERSONA_BY_COLOR = {
     '#ffec99': 'Yellow',
     '#ffc9c9': 'Pink'
   };
-  var RANK_BY_STROKE_WIDTH = { 4: 1, 2: 2, 1: 3 };
 
   function personaFromColor(bg){
     if(!bg) return '';
     return PERSONA_BY_COLOR[String(bg).toLowerCase()] || '';
   }
 
-  function rankFromStrokeWidth(sw){
-    return RANK_BY_STROKE_WIDTH[sw] != null ? RANK_BY_STROKE_WIDTH[sw] : '';
+  function rankFromStroke(sw, ss){
+    // fat (4) -> 1, medium (2) -> 2, normal (1) solid/dashed/dotted -> 3/4/5
+    if(sw === 4) return 1;
+    if(sw === 2) return 2;
+    if(sw === 1){
+      if(ss === 'dotted') return 5;
+      if(ss === 'dashed') return 4;
+      return 3;
+    }
+    return '';
   }
 
   function shareGroup(a, b){
@@ -130,7 +137,7 @@
         kind: 'shape',
         type: s.type,
         persona: personaFromColor(s.backgroundColor),
-        rank: rankFromStrokeWidth(s.strokeWidth),
+        rank: rankFromStroke(s.strokeWidth, s.strokeStyle),
         votes: voteResult.votes[s.id] || 0,
         groupIds: (s.groupIds || []).join('|'),
         x: s.x, y: s.y, width: s.width, height: s.height,

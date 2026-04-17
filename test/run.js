@@ -874,9 +874,24 @@ assert(wNode.sY.persona === 'Yellow', 'tabular: yellow #ffec99 -> persona Yellow
 assert(wNode.sP.persona === 'Pink',   'tabular: pink #ffc9c9 -> persona Pink');
 assert(wNode.sL.persona === 'Yellow', 'tabular: second yellow sticky -> persona Yellow');
 
-assert(wNode.sY.rank === 1, 'tabular: strokeWidth 4 -> rank 1');
-assert(wNode.sP.rank === 2, 'tabular: strokeWidth 2 -> rank 2');
-assert(wNode.sL.rank === 3, 'tabular: strokeWidth 1 -> rank 3');
+assert(wNode.sY.rank === 1, 'tabular: strokeWidth 4 -> rank 1 (fat)');
+assert(wNode.sP.rank === 2, 'tabular: strokeWidth 2 -> rank 2 (medium)');
+assert(wNode.sL.rank === 4, 'tabular: strokeWidth 1 dashed -> rank 4');
+
+// Extra rank cases: normal solid -> 3, normal dotted -> 5
+const rankCasesInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'rectangle', id: 'normalSolid',  x: 0, y: 0,   width: 80, height: 40,
+      backgroundColor: '#ffec99', strokeWidth: 1, strokeStyle: 'solid' },
+    { type: 'rectangle', id: 'normalDotted', x: 0, y: 100, width: 80, height: 40,
+      backgroundColor: '#ffec99', strokeWidth: 1, strokeStyle: 'dotted' }
+  ], files: {}
+});
+const rankGraph = ExcTabular._extractGraph(rankCasesInput);
+const rankById = {}; for (const n of rankGraph.nodes) rankById[n.id] = n;
+assert(rankById.normalSolid.rank === 3,  'tabular: strokeWidth 1 solid -> rank 3');
+assert(rankById.normalDotted.rank === 5, 'tabular: strokeWidth 1 dotted -> rank 5');
 
 assert(wNode.sY.votes === 2, `tabular: sY collects 2 group-matched votes (got ${wNode.sY.votes})`);
 assert(wNode.sP.votes === 1, `tabular: sP collects 1 bounds-matched vote (got ${wNode.sP.votes})`);
@@ -901,6 +916,7 @@ const wMetric = (name) => (workshopSummary.rows.find(r => r[0] === name) || [])[
 assert(wMetric('persona:Yellow') === 2, 'tabular: summary counts 2 Yellow personas');
 assert(wMetric('persona:Pink') === 1, 'tabular: summary counts 1 Pink persona');
 assert(wMetric('rank1') === 1, 'tabular: summary counts 1 rank-1 node');
+assert(wMetric('rank4') === 1, 'tabular: summary counts 1 rank-4 node (dashed)');
 assert(wMetric('totalVotes') === 3, 'tabular: summary totalVotes = 3');
 
 // ═══════════════════════════════════════════════════════════════════════════════
