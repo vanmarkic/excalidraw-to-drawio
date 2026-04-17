@@ -60,6 +60,7 @@ const converterFiles = [
   'converter-mermaid.js',
   'converter-klaxoon.js',
   'converter-penpot.js',
+  'converter-csv.js',
 ];
 
 for (const file of converterFiles) {
@@ -72,7 +73,7 @@ for (const file of converterFiles) {
   }
 }
 
-const { ExcDrawio, ExcMermaid, ExcKlaxoon, ExcPenpot } = sandbox.window;
+const { ExcDrawio, ExcMermaid, ExcKlaxoon, ExcPenpot, ExcTabular } = sandbox.window;
 
 // ── Load fixture ─────────────────────────────────────────────────────────────
 
@@ -701,6 +702,222 @@ assertMatch(spDrawio, /&amp;lt;world&amp;gt;/, 'edge: drawio XML-escapes text in
 
 const spMermaid = ExcMermaid.convertExcalidrawToMermaid(specialText);
 assert(typeof spMermaid === 'string', 'edge: mermaid handles special chars');
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CSV / XLSX TABULAR TESTS
+// ═══════════════════════════════════════════════════════════════════════════════
+section('CSV / XLSX tabular converter');
+
+const tabularOut = ExcTabular.convertExcalidrawToTabular(fixture);
+
+// Preview output structure (multi-section CSV)
+assert(typeof tabularOut === 'string', 'tabular: returns a string');
+assertIncludes(tabularOut, '### Nodes ###', 'tabular: contains Nodes section');
+assertIncludes(tabularOut, '### Edges ###', 'tabular: contains Edges section');
+assertIncludes(tabularOut, '### Adjacency ###', 'tabular: contains Adjacency section');
+assertIncludes(tabularOut, '### Summary ###', 'tabular: contains Summary section');
+
+// Header rows
+assertIncludes(tabularOut, 'id,label,persona,rank,votes,kind,type', 'tabular: Nodes header present with persona/rank/votes');
+assertIncludes(tabularOut, 'id,source,sourceLabel,target,targetLabel,label', 'tabular: Edges header present');
+assertIncludes(tabularOut, '### Votes ###', 'tabular: Votes section present');
+
+// Node rows contain the fixture shapes with labels from bound text
+assertIncludes(tabularOut, 'rect1', 'tabular: rect1 node row present');
+assertIncludes(tabularOut, 'ell1', 'tabular: ell1 node row present');
+assertIncludes(tabularOut, 'dia1', 'tabular: dia1 node row present');
+assertIncludes(tabularOut, 'Start', 'tabular: rect1 label "Start" present');
+assertIncludes(tabularOut, 'End', 'tabular: ell1 label "End" present');
+assertIncludes(tabularOut, 'Check?', 'tabular: dia1 label "Check?" present');
+
+// Edge rows: arrow1 rect1->dia1 and arrow2 dia1->ell1 (with "Yes" label)
+assertMatch(tabularOut, /arrow1,rect1,Start,dia1,Check\?/, 'tabular: arrow1 row has labels joined');
+assertIncludes(tabularOut, 'Yes', 'tabular: arrow2 label "Yes" present');
+
+// Deleted elements excluded
+assertNotIncludes(tabularOut, 'rect_deleted', 'tabular: deleted element excluded');
+
+// Graph extraction: degrees
+const graph = ExcTabular._extractGraph(fixture);
+const byId = {};
+for (const n of graph.nodes) byId[n.id] = n;
+assert(byId.rect1.outDegree === 1, 'tabular: rect1 outDegree=1');
+assert(byId.rect1.inDegree === 0, 'tabular: rect1 inDegree=0');
+assert(byId.dia1.inDegree === 1, 'tabular: dia1 inDegree=1');
+assert(byId.dia1.outDegree === 1, 'tabular: dia1 outDegree=1');
+assert(byId.ell1.inDegree === 1, 'tabular: ell1 inDegree=1');
+
+// Edges: 2 bound arrows (line1 is unbound and skipped)
+assert(graph.edges.length === 2, `tabular: 2 bound edges (got ${graph.edges.length})`);
+assert(graph.edges.some(e => e.label === 'Yes'), 'tabular: edge "Yes" label captured');
+
+// Adjacency matrix: cells at rect1->dia1 and dia1->ell1 should be 1
+const sheets = ExcTabular._buildSheets(fixture);
+const adj = sheets.find(s => s.name === 'Adjacency');
+assert(!!adj, 'tabular: Adjacency sheet exists');
+const nodesSheet = sheets.find(s => s.name === 'Nodes');
+const rowIds = nodesSheet.rows.map(r => r[0]);
+const ri = (id) => rowIds.indexOf(id);
+assert(adj.rows[ri('rect1')][ri('dia1') + 1] === 1,
+  'tabular: adjacency rect1 -> dia1 is 1');
+assert(adj.rows[ri('dia1')][ri('ell1') + 1] === 1,
+  'tabular: adjacency dia1 -> ell1 is 1');
+assert(adj.rows[ri('ell1')][ri('rect1') + 1] === 0,
+  'tabular: adjacency ell1 -> rect1 is 0 (not connected)');
+
+// Summary sheet
+const summary = sheets.find(s => s.name === 'Summary');
+const metric = (name) => (summary.rows.find(r => r[0] === name) || [])[1];
+assert(metric('nodeCount') === graph.nodes.length, 'tabular: summary nodeCount matches');
+assert(metric('edgeCount') === 2, 'tabular: summary edgeCount = 2');
+assert(metric('hasCycle') === false, 'tabular: fixture has no cycle');
+
+// Cyclical graph: A -> B -> C -> A
+const cyclicInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'rectangle', id: 'A', x: 0, y: 0, width: 100, height: 50 },
+    { type: 'rectangle', id: 'B', x: 200, y: 0, width: 100, height: 50 },
+    { type: 'rectangle', id: 'C', x: 100, y: 150, width: 100, height: 50 },
+    { type: 'arrow', id: 'e1', startBinding: { elementId: 'A' }, endBinding: { elementId: 'B' }, endArrowhead: 'arrow' },
+    { type: 'arrow', id: 'e2', startBinding: { elementId: 'B' }, endBinding: { elementId: 'C' }, endArrowhead: 'arrow' },
+    { type: 'arrow', id: 'e3', startBinding: { elementId: 'C' }, endBinding: { elementId: 'A' }, endArrowhead: 'arrow' }
+  ], files: {}
+});
+const cyclicSheets = ExcTabular._buildSheets(cyclicInput);
+const cyclicSummary = cyclicSheets.find(s => s.name === 'Summary');
+const cyclicMetric = (name) => (cyclicSummary.rows.find(r => r[0] === name) || [])[1];
+assert(cyclicMetric('hasCycle') === true, 'tabular: A->B->C->A cycle detected');
+assert(String(cyclicMetric('nodesOnCycles')).includes('A'), 'tabular: node A on cycle');
+assert(String(cyclicMetric('nodesOnCycles')).includes('B'), 'tabular: node B on cycle');
+assert(String(cyclicMetric('nodesOnCycles')).includes('C'), 'tabular: node C on cycle');
+
+// Many-to-many: two sources connecting to two targets
+const m2mInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'rectangle', id: 'U1', x: 0, y: 0, width: 80, height: 40 },
+    { type: 'rectangle', id: 'U2', x: 0, y: 100, width: 80, height: 40 },
+    { type: 'rectangle', id: 'G1', x: 300, y: 0, width: 80, height: 40 },
+    { type: 'rectangle', id: 'G2', x: 300, y: 100, width: 80, height: 40 },
+    { type: 'arrow', id: 'a1', startBinding: { elementId: 'U1' }, endBinding: { elementId: 'G1' }, endArrowhead: 'arrow' },
+    { type: 'arrow', id: 'a2', startBinding: { elementId: 'U1' }, endBinding: { elementId: 'G2' }, endArrowhead: 'arrow' },
+    { type: 'arrow', id: 'a3', startBinding: { elementId: 'U2' }, endBinding: { elementId: 'G1' }, endArrowhead: 'arrow' },
+    { type: 'arrow', id: 'a4', startBinding: { elementId: 'U2' }, endBinding: { elementId: 'G2' }, endArrowhead: 'arrow' }
+  ], files: {}
+});
+const m2mGraph = ExcTabular._extractGraph(m2mInput);
+const m2mById = {}; for (const n of m2mGraph.nodes) m2mById[n.id] = n;
+assert(m2mById.U1.outDegree === 2, 'tabular: m2m U1 has outDegree 2');
+assert(m2mById.G1.inDegree === 2, 'tabular: m2m G1 has inDegree 2');
+assert(m2mGraph.edges.length === 4, 'tabular: m2m produces 4 edges');
+
+// CSV escaping: commas and quotes in text
+const csvEscapeInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'rectangle', id: 'q1', x: 0, y: 0, width: 100, height: 50 },
+    { type: 'text', id: 'q1_t', x: 0, y: 0, width: 100, height: 50,
+      text: 'Hello, "world"', containerId: 'q1' }
+  ], files: {}
+});
+const escapedSheets = ExcTabular._buildSheets(csvEscapeInput);
+const escapedCsv = ExcTabular._sheetToCsv(escapedSheets.find(s => s.name === 'Nodes'));
+assertIncludes(escapedCsv, '"Hello, ""world"""', 'tabular: CSV escapes comma and double quotes');
+
+// XLSX: verify blob generated (async); requires JSZip in sandbox so we only check preview works
+// (Blob generation is exercised in-browser by the download button)
+assert(typeof ExcTabular.convertExcalidrawToCsvZipBlob === 'function', 'tabular: exports convertExcalidrawToCsvZipBlob');
+assert(typeof ExcTabular.convertExcalidrawToXlsxBlob === 'function', 'tabular: exports convertExcalidrawToXlsxBlob');
+
+// Accepts object input
+const tabularOut2 = ExcTabular.convertExcalidrawToTabular(fixtureObj);
+assert(typeof tabularOut2 === 'string' && tabularOut2.includes('### Nodes ###'), 'tabular: accepts object input');
+
+// Empty input
+const emptyTabular = ExcTabular.convertExcalidrawToTabular(JSON.stringify({ type:'excalidraw', elements: [] }));
+assertIncludes(emptyTabular, '### Nodes ###', 'tabular: handles empty elements');
+
+// Workshop semantics: persona, rank, votes
+const workshopInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    // Yellow sticky, high rank (strokeWidth 4), with grouped votes
+    { type: 'rectangle', id: 'sY', x: 0, y: 0, width: 200, height: 100,
+      backgroundColor: '#ffec99', strokeWidth: 4, strokeStyle: 'solid',
+      groupIds: ['grpA'] },
+    // Pink sticky, mid rank (strokeWidth 2), with one bounds-matched vote inside
+    { type: 'rectangle', id: 'sP', x: 400, y: 0, width: 200, height: 100,
+      backgroundColor: '#ffc9c9', strokeWidth: 2, strokeStyle: 'solid',
+      groupIds: [] },
+    // Yellow sticky, low rank (strokeWidth 1 dashed), no votes
+    { type: 'rectangle', id: 'sL', x: 800, y: 0, width: 200, height: 100,
+      backgroundColor: '#ffec99', strokeWidth: 1, strokeStyle: 'dashed',
+      groupIds: [] },
+    // Vote 1: shares groupId with sY
+    { type: 'freedraw', id: 'v1', x: 50, y: 30, width: 8, height: 8,
+      groupIds: ['grpA'], points: [[0,0],[8,8]] },
+    // Vote 2: different group from sY, but centroid falls inside sP
+    { type: 'freedraw', id: 'v2', x: 495, y: 45, width: 10, height: 10,
+      groupIds: ['otherGroup'], points: [[0,0],[10,10]] },
+    // Vote 3: another grouped vote on sY
+    { type: 'freedraw', id: 'v3', x: 10, y: 10, width: 6, height: 6,
+      groupIds: ['grpA'], points: [[0,0],[6,6]] }
+  ], files: {}
+});
+
+const workshopGraph = ExcTabular._extractGraph(workshopInput);
+const wNode = {};
+for (const n of workshopGraph.nodes) wNode[n.id] = n;
+
+assert(wNode.sY.persona === 'Yellow', 'tabular: yellow #ffec99 -> persona Yellow');
+assert(wNode.sP.persona === 'Pink',   'tabular: pink #ffc9c9 -> persona Pink');
+assert(wNode.sL.persona === 'Yellow', 'tabular: second yellow sticky -> persona Yellow');
+
+assert(wNode.sY.rank === 1, 'tabular: strokeWidth 4 -> rank 1 (fat)');
+assert(wNode.sP.rank === 2, 'tabular: strokeWidth 2 -> rank 2 (medium)');
+assert(wNode.sL.rank === 4, 'tabular: strokeWidth 1 dashed -> rank 4');
+
+// Extra rank cases: normal solid -> 3, normal dotted -> 5
+const rankCasesInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    { type: 'rectangle', id: 'normalSolid',  x: 0, y: 0,   width: 80, height: 40,
+      backgroundColor: '#ffec99', strokeWidth: 1, strokeStyle: 'solid' },
+    { type: 'rectangle', id: 'normalDotted', x: 0, y: 100, width: 80, height: 40,
+      backgroundColor: '#ffec99', strokeWidth: 1, strokeStyle: 'dotted' }
+  ], files: {}
+});
+const rankGraph = ExcTabular._extractGraph(rankCasesInput);
+const rankById = {}; for (const n of rankGraph.nodes) rankById[n.id] = n;
+assert(rankById.normalSolid.rank === 3,  'tabular: strokeWidth 1 solid -> rank 3');
+assert(rankById.normalDotted.rank === 5, 'tabular: strokeWidth 1 dotted -> rank 5');
+
+assert(wNode.sY.votes === 2, `tabular: sY collects 2 group-matched votes (got ${wNode.sY.votes})`);
+assert(wNode.sP.votes === 1, `tabular: sP collects 1 bounds-matched vote (got ${wNode.sP.votes})`);
+assert(wNode.sL.votes === 0, 'tabular: sL has no votes');
+
+// Vote assignments sheet
+const workshopSheets = ExcTabular._buildSheets(workshopInput);
+const votesSheet = workshopSheets.find(s => s.name === 'Votes');
+assert(!!votesSheet, 'tabular: Votes sheet exists');
+assert(votesSheet.rows.length === 3, `tabular: 3 vote assignments (got ${votesSheet.rows.length})`);
+const v2row = votesSheet.rows.find(r => r[0] === 'v2');
+assert(v2row && v2row[3] === 'bounds', 'tabular: v2 assigned via bounds method');
+const v1row = votesSheet.rows.find(r => r[0] === 'v1');
+assert(v1row && v1row[3] === 'group', 'tabular: v1 assigned via group method');
+
+// Freedraws are no longer treated as nodes (they are votes, not stickies)
+assert(!wNode.v1 && !wNode.v2 && !wNode.v3, 'tabular: freedraws excluded from Nodes');
+
+// Summary rolls up persona and rank counts
+const workshopSummary = workshopSheets.find(s => s.name === 'Summary');
+const wMetric = (name) => (workshopSummary.rows.find(r => r[0] === name) || [])[1];
+assert(wMetric('persona:Yellow') === 2, 'tabular: summary counts 2 Yellow personas');
+assert(wMetric('persona:Pink') === 1, 'tabular: summary counts 1 Pink persona');
+assert(wMetric('rank1') === 1, 'tabular: summary counts 1 rank-1 node');
+assert(wMetric('rank4') === 1, 'tabular: summary counts 1 rank-4 node (dashed)');
+assert(wMetric('totalVotes') === 3, 'tabular: summary totalVotes = 3');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // REPORT

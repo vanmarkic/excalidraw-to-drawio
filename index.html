@@ -9,7 +9,7 @@
   <body>
     <header>
       <h1>Excalidraw Converter</h1>
-      <p class="sub">Client-side conversion of Excalidraw JSON to draw.io, Mermaid, Klaxoon, or Penpot. No uploads.</p>
+      <p class="sub">Client-side conversion of Excalidraw JSON to draw.io, Mermaid, Klaxoon, Penpot, CSV, or Excel. No uploads.</p>
     </header>
 
     <main>
@@ -34,6 +34,8 @@
               <option value="mermaid">Mermaid (.mmd)</option>
               <option value="klaxoon">Klaxoon (vector SVG)</option>
               <option value="penpot">Penpot (.penpot)</option>
+              <option value="csv">CSV multi-file (.zip)</option>
+              <option value="xlsx">Excel multi-tab (.xlsx)</option>
             </select>
           </div>
           <button id="downloadBtn" type="button" disabled>Download</button>
@@ -63,6 +65,7 @@
     <script src="converter-mermaid.js"></script>
     <script src="converter-klaxoon.js"></script>
     <script src="converter-penpot.js"></script>
+    <script src="converter-csv.js"></script>
     <script src="main.js"></script>
   </body>
 </html>

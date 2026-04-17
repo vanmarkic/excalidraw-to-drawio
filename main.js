@@ -15,7 +15,9 @@
     drawio:  { label: 'draw.io XML',    ext: '.drawio',  mime: 'application/xml' },
     mermaid: { label: 'Mermaid',         ext: '.mmd',     mime: 'text/plain' },
     klaxoon: { label: 'Klaxoon (SVG)',   ext: '.svg',     mime: 'image/svg+xml' },
-    penpot:  { label: 'Penpot',           ext: '.penpot',  mime: 'application/zip' }
+    penpot:  { label: 'Penpot',           ext: '.penpot',  mime: 'application/zip' },
+    csv:     { label: 'CSV (multi-file .zip)', ext: '.zip',   mime: 'application/zip' },
+    xlsx:    { label: 'Excel workbook',        ext: '.xlsx',  mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
   };
 
   function getFormat(){ return formatSelect.value; }
@@ -38,6 +40,10 @@
           break;
         case 'penpot':
           out = window.ExcPenpot.convertExcalidrawToPenpot(data);
+          break;
+        case 'csv':
+        case 'xlsx':
+          out = window.ExcTabular.convertExcalidrawToTabular(data);
           break;
         case 'drawio':
         default:
@@ -287,6 +293,24 @@
       } catch(err){
         console.error(err);
         info.textContent = 'Error generating .penpot file: ' + (err && err.message ? err.message : String(err));
+        return;
+      }
+    } else if(fmt === 'csv'){
+      try {
+        const data = inputText.value.trim();
+        blob = await window.ExcTabular.convertExcalidrawToCsvZipBlob(data);
+      } catch(err){
+        console.error(err);
+        info.textContent = 'Error generating CSV zip: ' + (err && err.message ? err.message : String(err));
+        return;
+      }
+    } else if(fmt === 'xlsx'){
+      try {
+        const data = inputText.value.trim();
+        blob = await window.ExcTabular.convertExcalidrawToXlsxBlob(data);
+      } catch(err){
+        console.error(err);
+        info.textContent = 'Error generating .xlsx file: ' + (err && err.message ? err.message : String(err));
         return;
       }
     } else {
