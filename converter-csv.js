@@ -18,6 +18,73 @@
 (function(global){
   'use strict';
 
+  // Workshop semantics: colours encode personas, stroke width encodes rank,
+  // freedraw scribbles are dot votes (grouped via groupIds or bounded inside
+  // the target sticky).
+  var PERSONA_BY_COLOR = {
+    '#ffec99': 'Yellow',
+    '#ffc9c9': 'Pink'
+  };
+  var RANK_BY_STROKE_WIDTH = { 4: 1, 2: 2, 1: 3 };
+
+  function personaFromColor(bg){
+    if(!bg) return '';
+    return PERSONA_BY_COLOR[String(bg).toLowerCase()] || '';
+  }
+
+  function rankFromStrokeWidth(sw){
+    return RANK_BY_STROKE_WIDTH[sw] != null ? RANK_BY_STROKE_WIDTH[sw] : '';
+  }
+
+  function shareGroup(a, b){
+    if(!a || !b) return false;
+    for(var i = 0; i < a.length; i++) if(b.indexOf(a[i]) >= 0) return true;
+    return false;
+  }
+
+  function rectArea(r){ return (r.width || 0) * (r.height || 0); }
+
+  function centroidInside(fd, r){
+    var cx = (fd.x || 0) + (fd.width || 0) / 2;
+    var cy = (fd.y || 0) + (fd.height || 0) / 2;
+    return cx >= r.x && cx <= r.x + r.width &&
+           cy >= r.y && cy <= r.y + r.height;
+  }
+
+  function assignVotes(rectangles, freedraws){
+    // Returns array of { freedrawId, targetId, method } and fills votes[rectId].
+    var votes = {};
+    var assignments = [];
+    for(var i = 0; i < rectangles.length; i++) votes[rectangles[i].id] = 0;
+
+    for(var f = 0; f < freedraws.length; f++){
+      var fd = freedraws[f];
+      var target = null, method = null;
+
+      // Prefer shared groupId match
+      for(var g = 0; g < rectangles.length; g++){
+        if(shareGroup(fd.groupIds, rectangles[g].groupIds)){
+          target = rectangles[g]; method = 'group'; break;
+        }
+      }
+      // Fallback: centroid inside the smallest containing rectangle
+      if(!target){
+        var smallest = null;
+        for(var b = 0; b < rectangles.length; b++){
+          if(!centroidInside(fd, rectangles[b])) continue;
+          if(!smallest || rectArea(rectangles[b]) < rectArea(smallest)) smallest = rectangles[b];
+        }
+        if(smallest){ target = smallest; method = 'bounds'; }
+      }
+
+      if(target){
+        votes[target.id]++;
+        assignments.push({ freedrawId: fd.id, targetId: target.id, method: method });
+      }
+    }
+    return { votes: votes, assignments: assignments };
+  }
+
   // ── Graph extraction ───────────────────────────────────────────────────────
 
   function extractGraph(excalidata){
@@ -27,8 +94,11 @@
     var byId = {};
     for(var i = 0; i < elements.length; i++) byId[elements[i].id] = elements[i];
 
-    var shapeTypes = ['rectangle','ellipse','diamond','freedraw','image'];
-    var shapes = elements.filter(function(e){ return shapeTypes.indexOf(e.type) >= 0; });
+    // Sticky-producing shape types (rectangle/ellipse/diamond/image). Freedraws
+    // are treated as votes, not as nodes.
+    var stickyTypes = ['rectangle','ellipse','diamond','image'];
+    var shapes = elements.filter(function(e){ return stickyTypes.indexOf(e.type) >= 0; });
+    var freedraws = elements.filter(function(e){ return e.type === 'freedraw'; });
     var edges  = elements.filter(function(e){ return e.type === 'arrow' || e.type === 'line'; });
     var texts  = elements.filter(function(e){ return e.type === 'text'; });
 
@@ -47,6 +117,9 @@
     // Standalone text becomes its own "node" so it isn't silently dropped
     var standaloneTexts = texts.filter(function(t){ return !t.containerId; });
 
+    // Assign freedraw votes to rectangles (prefer groupId, fall back to bounds)
+    var voteResult = assignVotes(shapes, freedraws);
+
     // Build node list
     var nodes = [];
     for(var k = 0; k < shapes.length; k++){
@@ -56,6 +129,10 @@
         label: shapeLabel[s.id] || '',
         kind: 'shape',
         type: s.type,
+        persona: personaFromColor(s.backgroundColor),
+        rank: rankFromStrokeWidth(s.strokeWidth),
+        votes: voteResult.votes[s.id] || 0,
+        groupIds: (s.groupIds || []).join('|'),
         x: s.x, y: s.y, width: s.width, height: s.height,
         backgroundColor: s.backgroundColor || '',
         strokeColor: s.strokeColor || '',
@@ -74,6 +151,10 @@
         label: st.text || '',
         kind: 'text',
         type: 'text',
+        persona: '',
+        rank: '',
+        votes: 0,
+        groupIds: (st.groupIds || []).join('|'),
         x: st.x, y: st.y, width: st.width, height: st.height,
         backgroundColor: '',
         strokeColor: st.strokeColor || '',
@@ -128,7 +209,12 @@
       }
     }
 
-    return { nodes: nodes, edges: edgeRows, nodeIndex: nodeIndex };
+    return {
+      nodes: nodes,
+      edges: edgeRows,
+      nodeIndex: nodeIndex,
+      voteAssignments: voteResult.assignments
+    };
   }
 
   // ── Adjacency matrix & cycle detection ─────────────────────────────────────
@@ -205,11 +291,13 @@
 
     var nodesSheet = {
       name: 'Nodes',
-      headers: ['id','label','kind','type','x','y','width','height',
+      headers: ['id','label','persona','rank','votes','kind','type',
+                'groupIds','x','y','width','height',
                 'backgroundColor','strokeColor','strokeWidth','strokeStyle',
                 'opacity','angle','inDegree','outDegree'],
       rows: graph.nodes.map(function(n){
-        return [n.id, n.label, n.kind, n.type, n.x, n.y, n.width, n.height,
+        return [n.id, n.label, n.persona, n.rank, n.votes, n.kind, n.type,
+                n.groupIds, n.x, n.y, n.width, n.height,
                 n.backgroundColor, n.strokeColor, n.strokeWidth, n.strokeStyle,
                 n.opacity, n.angle, n.inDegree, n.outDegree];
       })
@@ -243,20 +331,47 @@
       return n.inDegree === 0 && n.outDegree === 0;
     }).map(function(n){ return n.id; });
 
-    var summarySheet = {
-      name: 'Summary',
-      headers: ['metric','value'],
-      rows: [
-        ['nodeCount', graph.nodes.length],
-        ['edgeCount', graph.edges.length],
-        ['hasCycle', cycles.hasCycle],
-        ['cycleBackEdges', cycles.cycleEdgeCount],
-        ['nodesOnCycles', cycles.nodesOnCycles.join('; ')],
-        ['isolatedNodes', isolated.join('; ')]
-      ]
+    var nodeLabelById = {};
+    for(var nl = 0; nl < graph.nodes.length; nl++){
+      nodeLabelById[graph.nodes[nl].id] = graph.nodes[nl].label;
+    }
+    var votesSheet = {
+      name: 'Votes',
+      headers: ['freedrawId','targetId','targetLabel','method'],
+      rows: (graph.voteAssignments || []).map(function(v){
+        return [v.freedrawId, v.targetId, nodeLabelById[v.targetId] || '', v.method];
+      })
     };
 
-    return [nodesSheet, edgesSheet, adjSheet, summarySheet];
+    var personaCounts = {};
+    var rankCounts = {};
+    var totalVotes = 0;
+    for(var pc = 0; pc < graph.nodes.length; pc++){
+      var nn = graph.nodes[pc];
+      if(nn.persona) personaCounts[nn.persona] = (personaCounts[nn.persona] || 0) + 1;
+      if(nn.rank !== '' && nn.rank != null) rankCounts['rank' + nn.rank] = (rankCounts['rank' + nn.rank] || 0) + 1;
+      totalVotes += nn.votes || 0;
+    }
+
+    var summaryRows = [
+      ['nodeCount', graph.nodes.length],
+      ['edgeCount', graph.edges.length],
+      ['totalVotes', totalVotes],
+      ['hasCycle', cycles.hasCycle],
+      ['cycleBackEdges', cycles.cycleEdgeCount],
+      ['nodesOnCycles', cycles.nodesOnCycles.join('; ')],
+      ['isolatedNodes', isolated.join('; ')]
+    ];
+    Object.keys(personaCounts).sort().forEach(function(p){
+      summaryRows.push(['persona:' + p, personaCounts[p]]);
+    });
+    Object.keys(rankCounts).sort().forEach(function(r){
+      summaryRows.push([r, rankCounts[r]]);
+    });
+
+    var summarySheet = { name: 'Summary', headers: ['metric','value'], rows: summaryRows };
+
+    return [nodesSheet, edgesSheet, adjSheet, votesSheet, summarySheet];
   }
 
   // ── CSV helpers ────────────────────────────────────────────────────────────

@@ -718,8 +718,9 @@ assertIncludes(tabularOut, '### Adjacency ###', 'tabular: contains Adjacency sec
 assertIncludes(tabularOut, '### Summary ###', 'tabular: contains Summary section');
 
 // Header rows
-assertIncludes(tabularOut, 'id,label,kind,type,x,y,width,height', 'tabular: Nodes header present');
+assertIncludes(tabularOut, 'id,label,persona,rank,votes,kind,type', 'tabular: Nodes header present with persona/rank/votes');
 assertIncludes(tabularOut, 'id,source,sourceLabel,target,targetLabel,label', 'tabular: Edges header present');
+assertIncludes(tabularOut, '### Votes ###', 'tabular: Votes section present');
 
 // Node rows contain the fixture shapes with labels from bound text
 assertIncludes(tabularOut, 'rect1', 'tabular: rect1 node row present');
@@ -836,6 +837,71 @@ assert(typeof tabularOut2 === 'string' && tabularOut2.includes('### Nodes ###'),
 // Empty input
 const emptyTabular = ExcTabular.convertExcalidrawToTabular(JSON.stringify({ type:'excalidraw', elements: [] }));
 assertIncludes(emptyTabular, '### Nodes ###', 'tabular: handles empty elements');
+
+// Workshop semantics: persona, rank, votes
+const workshopInput = JSON.stringify({
+  type: 'excalidraw', version: 2,
+  elements: [
+    // Yellow sticky, high rank (strokeWidth 4), with grouped votes
+    { type: 'rectangle', id: 'sY', x: 0, y: 0, width: 200, height: 100,
+      backgroundColor: '#ffec99', strokeWidth: 4, strokeStyle: 'solid',
+      groupIds: ['grpA'] },
+    // Pink sticky, mid rank (strokeWidth 2), with one bounds-matched vote inside
+    { type: 'rectangle', id: 'sP', x: 400, y: 0, width: 200, height: 100,
+      backgroundColor: '#ffc9c9', strokeWidth: 2, strokeStyle: 'solid',
+      groupIds: [] },
+    // Yellow sticky, low rank (strokeWidth 1 dashed), no votes
+    { type: 'rectangle', id: 'sL', x: 800, y: 0, width: 200, height: 100,
+      backgroundColor: '#ffec99', strokeWidth: 1, strokeStyle: 'dashed',
+      groupIds: [] },
+    // Vote 1: shares groupId with sY
+    { type: 'freedraw', id: 'v1', x: 50, y: 30, width: 8, height: 8,
+      groupIds: ['grpA'], points: [[0,0],[8,8]] },
+    // Vote 2: different group from sY, but centroid falls inside sP
+    { type: 'freedraw', id: 'v2', x: 495, y: 45, width: 10, height: 10,
+      groupIds: ['otherGroup'], points: [[0,0],[10,10]] },
+    // Vote 3: another grouped vote on sY
+    { type: 'freedraw', id: 'v3', x: 10, y: 10, width: 6, height: 6,
+      groupIds: ['grpA'], points: [[0,0],[6,6]] }
+  ], files: {}
+});
+
+const workshopGraph = ExcTabular._extractGraph(workshopInput);
+const wNode = {};
+for (const n of workshopGraph.nodes) wNode[n.id] = n;
+
+assert(wNode.sY.persona === 'Yellow', 'tabular: yellow #ffec99 -> persona Yellow');
+assert(wNode.sP.persona === 'Pink',   'tabular: pink #ffc9c9 -> persona Pink');
+assert(wNode.sL.persona === 'Yellow', 'tabular: second yellow sticky -> persona Yellow');
+
+assert(wNode.sY.rank === 1, 'tabular: strokeWidth 4 -> rank 1');
+assert(wNode.sP.rank === 2, 'tabular: strokeWidth 2 -> rank 2');
+assert(wNode.sL.rank === 3, 'tabular: strokeWidth 1 -> rank 3');
+
+assert(wNode.sY.votes === 2, `tabular: sY collects 2 group-matched votes (got ${wNode.sY.votes})`);
+assert(wNode.sP.votes === 1, `tabular: sP collects 1 bounds-matched vote (got ${wNode.sP.votes})`);
+assert(wNode.sL.votes === 0, 'tabular: sL has no votes');
+
+// Vote assignments sheet
+const workshopSheets = ExcTabular._buildSheets(workshopInput);
+const votesSheet = workshopSheets.find(s => s.name === 'Votes');
+assert(!!votesSheet, 'tabular: Votes sheet exists');
+assert(votesSheet.rows.length === 3, `tabular: 3 vote assignments (got ${votesSheet.rows.length})`);
+const v2row = votesSheet.rows.find(r => r[0] === 'v2');
+assert(v2row && v2row[3] === 'bounds', 'tabular: v2 assigned via bounds method');
+const v1row = votesSheet.rows.find(r => r[0] === 'v1');
+assert(v1row && v1row[3] === 'group', 'tabular: v1 assigned via group method');
+
+// Freedraws are no longer treated as nodes (they are votes, not stickies)
+assert(!wNode.v1 && !wNode.v2 && !wNode.v3, 'tabular: freedraws excluded from Nodes');
+
+// Summary rolls up persona and rank counts
+const workshopSummary = workshopSheets.find(s => s.name === 'Summary');
+const wMetric = (name) => (workshopSummary.rows.find(r => r[0] === name) || [])[1];
+assert(wMetric('persona:Yellow') === 2, 'tabular: summary counts 2 Yellow personas');
+assert(wMetric('persona:Pink') === 1, 'tabular: summary counts 1 Pink persona');
+assert(wMetric('rank1') === 1, 'tabular: summary counts 1 rank-1 node');
+assert(wMetric('totalVotes') === 3, 'tabular: summary totalVotes = 3');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // REPORT
